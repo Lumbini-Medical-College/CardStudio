@@ -2,9 +2,10 @@
 Builds LMC ID cards from the blank templates for the Datacard SD160.
 
 Layout coordinates are measured on the 300 dpi design (638 x 1011 px, CR80 portrait).
-Everything is drawn on a 600 dpi page (1275 x 2025 px) that exactly matches the
-driver's ISO ID-1 page (153 x 243 pt), so text, photo and barcode stay sharp and
-the driver never stretches the image.
+Everything is drawn on a 600 dpi page (1276 x 2026 px), exactly twice the printer's
+own 300 dpi grid (638 x 1013 dots). For printing it is halved to that grid and sent
+losslessly, so the driver passes it to the printer dot for dot: nothing is rescaled
+or JPEG-compressed, and every barcode bar lands on whole printer dots.
 """
 
 import io
@@ -13,6 +14,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import zlib
 from functools import lru_cache
 from pathlib import Path
 
@@ -28,8 +30,9 @@ FONTS = RES / "fonts"
 MODELS = RES / "models"
 
 DESIGN = (638, 1011)       # 300 dpi design canvas
-PAGE = (1275, 2025)        # 600 dpi, 153 x 243 pt
-PAGE_PT = (153, 243)
+DEVICE = (638, 1013)       # the driver's 300 dpi raster for an ISO ID-1 card (front/back panels)
+DEVICE_PT = (DEVICE[0] * 72 / 300, DEVICE[1] * 72 / 300)   # PDF page that maps 1:1 onto it
+PAGE = (DEVICE[0] * 2, DEVICE[1] * 2)                      # 600 dpi working page
 MASK = (652, 1012)         # driver's DTC K-mask canvas
 SX, SY = PAGE[0] / DESIGN[0], PAGE[1] / DESIGN[1]
 
@@ -271,7 +274,7 @@ def fit_pdf417(text, slot_w, slot_h):
     Most robust PDF417 that fits the slot (300 dpi px = printer dots).
     Wider bars matter most (3 dots preferred; 2 dots, 0.17 mm, is the smallest
     that prints), then taller rows (2-3 bars high), then more error correction.
-    Returns (codes, module dots, row height dots, security level).
+    Returns (codes, module dots, row height dots, security level, columns).
     """
     for module in (3, 2):
         best = None
@@ -285,10 +288,30 @@ def fit_pdf417(text, slot_w, slot_h):
                     continue
                 row = min(slot_h // len(codes), 3 * module)
                 if row >= 2 * module and (best is None or (row, security) > (best[2], best[3])):
-                    best = (codes, module, row, security)
+                    best = (codes, module, row, security, cols)
         if best:
             return best
     return None
+
+
+def barcode_source(fields):
+    """The form values a barcode is made from: a saved barcode is reused only while these are unchanged."""
+    return {"employee_id": str(fields.get("employee_id") or "").strip(),
+            "name": str(fields.get("name") or "").strip(),
+            "designation": str(fields.get("designation") or "").strip(),
+            "extra_lines": [str(l).strip() for l in fields.get("extra_lines") or [] if str(l).strip()]}
+
+
+def saved_pdf417(spec, slot_w, slot_h):
+    """Rebuild a saved barcode exactly (same text, columns, error correction and bar sizes), if it still fits."""
+    try:
+        cols, security, module, row = (int(spec[k]) for k in ("columns", "security", "module", "row"))
+        codes = encode(spec["text"], columns=cols, security_level=security)
+    except Exception:  # no settings saved (e.g. read from an uploaded barcode image)
+        return None
+    if (17 * (cols + 4) + 1) * module > slot_w or len(codes) * row > slot_h:
+        return None
+    return codes, module, row, security, cols
 
 
 def verify_barcode(page, box, text, workdir):
@@ -313,10 +336,41 @@ def kmask(boxes, pad=12):
     return m
 
 
+def device_image(page):
+    """The card at the printer's own 300 dpi grid (an exact 2:1 reduction of the page)."""
+    page = page.convert("RGB")
+    return page.reduce(2) if page.size == PAGE else page.resize(DEVICE, Image.LANCZOS)
+
+
 def to_pdf(page):
-    buf = io.BytesIO()
-    page.save(buf, "PDF", resolution=PAGE[0] / (PAGE_PT[0] / 72))
-    return buf.getvalue()
+    """
+    One-page PDF holding the card as a lossless 300 dpi image (Pillow's own PDF
+    writer would JPEG-compress it). Its page size makes the Entrust driver copy
+    it dot for dot.
+    """
+    img = device_image(page)
+    data = zlib.compress(img.tobytes(), 6)
+    pw, ph = (f"{v:.2f}" for v in DEVICE_PT)
+    content = f"q {pw} 0 0 {ph} 0 0 cm /Im0 Do Q".encode()
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {pw} {ph}] "
+        f"/Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>".encode(),
+        f"<< /Type /XObject /Subtype /Image /Width {img.width} /Height {img.height} /ColorSpace /DeviceRGB "
+        f"/BitsPerComponent 8 /Interpolate false /Filter /FlateDecode /Length {len(data)} >>\nstream\n".encode()
+        + data + b"\nendstream",
+        f"<< /Length {len(content)} >>\nstream\n".encode() + content + b"\nendstream",
+    ]
+    out, offsets = bytearray(b"%PDF-1.4\n"), []
+    for i, obj in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj\n".encode() + obj + b"\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode()
+    out += b"".join(f"{o:010d} 00000 n \n".encode() for o in offsets)
+    out += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    return bytes(out)
 
 
 # --- front ----------------------------------------------------------------------
@@ -343,7 +397,12 @@ def place_photo(page, cut, scale=1.0, dx=0, dy=0):
     page.alpha_composite(person, (left, top)) if page.mode == "RGBA" else page.paste(person, (left, top), person)
 
 
-def build_front(fields, photo=None, signature=None, workdir="."):
+def build_front(fields, photo=None, signature=None, workdir=".", barcode=None):
+    """
+    barcode: the card's saved barcode ({"text", "columns", "security", "module", "row",
+    "source"}). While the ID, name, designation and extra lines are unchanged it is
+    rebuilt exactly as saved; otherwise a new one is made from the form.
+    """
     page = template("front").copy()
     d = ImageDraw.Draw(page)
     info = {}
@@ -382,13 +441,16 @@ def build_front(fields, photo=None, signature=None, workdir="."):
     # barcode
     if not fields.get("employee_id", "").strip():
         raise ValueError("Employee ID is required for the barcode.")
-    text = build_text(fields["employee_id"], fields.get("name", ""), fields.get("designation", ""),
-                      fields.get("extra_lines", []))
+    source = barcode_source(fields)
+    saved = barcode if isinstance(barcode, dict) and barcode.get("source") == source and barcode.get("text") else None
+    text = saved["text"] if saved else build_text(source["employee_id"], source["name"], source["designation"],
+                                                  source["extra_lines"])
     s = BARCODE_SLOT
-    fit = fit_pdf417(text, s[2] - s[0], s[3] - s[1])
+    reused = saved_pdf417(saved, s[2] - s[0], s[3] - s[1]) if saved else None
+    fit = reused or fit_pdf417(text, s[2] - s[0], s[3] - s[1])
     if not fit:
         raise ValueError("The barcode text is too long to fit at a scannable size. Shorten the extra lines.")
-    codes, module, row, security = fit
+    codes, module, row, security, cols = fit
     bc = render_image(codes, scale=1, ratio=1, padding=0).convert("RGB")      # 1 px per bar and per row
     w300, h300 = bc.width * module, bc.height * row                          # printer dots
     bc = bc.resize((w300 * 2, h300 * 2), Image.NEAREST)                       # 600 dpi page
@@ -402,7 +464,9 @@ def build_front(fields, photo=None, signature=None, workdir="."):
     else:  # no reader on this computer: the size rules above still apply
         ok, decoded = None, None
     info["k_boxes"] = [box]
-    info.update(text=text, verified=ok, decoded=decoded, security_level=security,
+    info["barcode"] = {"text": text, "columns": cols, "security": security, "module": module, "row": row,
+                       "source": source}
+    info.update(text=text, verified=ok, decoded=decoded, security_level=security, barcode_reused=bool(reused),
                 module_mm=round(module * 25.4 / 300, 2), row_mm=round(row * 25.4 / 300, 2),
                 size_mm=[round(w300 * 25.4 / 300, 1), round(h300 * 25.4 / 300, 1)])
     return page, kmask([box]), info

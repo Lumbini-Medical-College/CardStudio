@@ -9,6 +9,8 @@ bitmaps is enabled in the printer's Printing Preferences.
 
 import os
 
+from PIL import Image
+
 import card
 
 try:
@@ -117,7 +119,7 @@ def print_card(job, title):
     finally:
         win32print.ClosePrinter(h)
 
-    page, boxes = job["page"], list(job.get("boxes", []))
+    page, boxes = card.device_image(job["page"]), list(job.get("boxes", []))   # 300 dpi, lossless
     dc = win32ui.CreateDCFromHandle(win32gui.CreateDC("WINSPOOL", name, devmode))
     try:
         pw, ph = dc.GetDeviceCaps(win32con.PHYSICALWIDTH), dc.GetDeviceCaps(win32con.PHYSICALHEIGHT)
@@ -128,16 +130,20 @@ def print_card(job, title):
             boxes = [_rotate_box(b, design_w) for b in boxes]
             design_w, design_h = design_h, design_w
 
+        # Hand Windows an image that already has the printer's own size, so it is copied
+        # dot for dot instead of being stretched (GDI's stretching drops pixels).
+        if page.size != (pw, ph):
+            page = page.resize((pw, ph), Image.LANCZOS)
+
         job_id = dc.StartDoc(title)
         dc.StartPage()
         out = dc.GetHandleOutput()
         ImageWin.Dib(page).draw(out, (-ox, -oy, pw - ox, ph - oy))   # full card, edge to edge
-        sx, sy = page.width / design_w, page.height / design_h
+        sx, sy = pw / design_w, ph / design_h
         for b in boxes:
-            crop = page.crop((round(b[0] * sx), round(b[1] * sy), round(b[2] * sx), round(b[3] * sy)))
-            mono = crop.convert("L").point(lambda v: 0 if v < 140 else 255).convert("1")
-            ImageWin.Dib(mono).draw(out, (round(b[0] * pw / design_w) - ox, round(b[1] * ph / design_h) - oy,
-                                          round(b[2] * pw / design_w) - ox, round(b[3] * ph / design_h) - oy))
+            r = (round(b[0] * sx), round(b[1] * sy), round(b[2] * sx), round(b[3] * sy))
+            mono = page.crop(r).convert("L").point(lambda v: 0 if v < 140 else 255).convert("1")
+            ImageWin.Dib(mono).draw(out, (r[0] - ox, r[1] - oy, r[2] - ox, r[3] - oy))
         dc.EndPage()
         dc.EndDoc()
     finally:

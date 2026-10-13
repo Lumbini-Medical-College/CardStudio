@@ -101,8 +101,13 @@ def save_card(body):
     photo = body.get("photo")
     cut = png_bytes(person(photo)) if photo else None
     signature = data_bytes(body["signature"]) if body.get("signature") else None
-    return db.save(body.get("fields", {}), data_bytes(photo) if photo else None, cut,
-                   signature, keep_images=bool(signature))
+    fields = body.get("fields", {})
+    barcode = body.get("barcode")   # from the last preview; kept only if it belongs to these fields
+    if not (isinstance(barcode, dict) and isinstance(barcode.get("text"), str)
+            and barcode.get("source") == card.barcode_source(fields)):
+        barcode = None
+    return db.save(fields, data_bytes(photo) if photo else None, cut,
+                   signature, keep_images=bool(signature), barcode=barcode)
 
 
 def load_card(card_id):
@@ -124,7 +129,7 @@ def render(body, owner):
     fields = body.get("fields", {})
     photo = person(body["photo"]) if body.get("photo") else None
     signature = decode_image(body["signature"]) if body.get("signature") else None
-    front, front_mask, front_info = card.build_front(fields, photo, signature, WORK)
+    front, front_mask, front_info = card.build_front(fields, photo, signature, WORK, body.get("barcode"))
     back, back_mask, back_info = card.build_back(fields)
     built[owner] = {
         "front": {"page": front, "mask": front_mask, "boxes": front_info.pop("k_boxes")},
@@ -156,6 +161,8 @@ def decode_barcode(body):
         else:
             extra.append(line)
     fields["extra_lines"] = extra
+    # keep the original text exactly, so the card's barcode reads the same as the uploaded one
+    fields["barcode"] = {"text": found[0]["payload"], "source": card.barcode_source(fields)}
     return fields
 
 

@@ -105,7 +105,14 @@ Other commands: `python run.py --users` (list logins), `--del-user NAME`.
 2. Load a blank card and press **Print front**.
 3. Put the same card back in, printed side down, same end first, and press **Print back**.
 
-Every print is saved automatically with its date.
+Every print is saved automatically with its date. The barcode is saved with the card too: reprints use exactly
+the same barcode as long as the ID, name, designation and extra lines are unchanged, and a
+barcode filled in from an uploaded barcode image keeps that barcode's text exactly.
+
+Print quality: the card is sent to the driver as a lossless image at the printer's own
+300 dpi grid (638 x 1013 dots), so the driver copies it dot for dot and the barcode bars
+print on the black (K) panel with clean edges. A thin line along the length of every card
+comes from the printer itself (dust on the printhead or rollers): run a cleaning card.
 
 ## Files
 
