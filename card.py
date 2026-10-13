@@ -56,6 +56,7 @@ ID_LABELS = {"citizenship": None, "passport": "Passport No:"}   # None: keep the
 BACK_VALUE_X, BACK_RIGHT = 311, 622
 BACK_BASELINES = [round(58 + 41.4 * i) for i in range(9)]
 BACK_CAP = 19
+BACK_BELOW_NID = (282, 402)                 # band holding the rows under "NID No:" (above the red band)
 BACK_QR_BOX = (58, 863, 166, 971)           # QR on the back template (used if no reader is available)
 BACK_FIELDS = ["card_no", "dob", "blood_group", "fh_name", "citizenship_no",
                "nid_no", "address", "contact", "contact2"]
@@ -507,6 +508,17 @@ def draw_value(d, key, value, baseline):
     d.text((x, y), value, font=fit_font(d, value, "regular", cap, max_w), fill=INK, anchor="ls")
 
 
+def drop_nid_row(page, rows):
+    """No NID: move the template's rows below "NID No:" up into its place. Returns the new rows."""
+    i = [k for k, _ in rows].index("nid_no")
+    shift = rows[i + 1][1] - rows[i][1]
+    top, bottom = BACK_BELOW_NID
+    band = page.crop((0, P(0, top)[1], page.width, P(0, bottom)[1]))
+    page.paste(band, (0, P(0, top - shift)[1]))
+    page.paste((255, 255, 255), (0, P(0, bottom - shift)[1], page.width, P(0, bottom)[1]))
+    return rows[:i] + [(k, b - shift) for k, b in rows[i + 1:]]
+
+
 def build_back(fields):
     page = template("back").copy()
     d = ImageDraw.Draw(page)
@@ -518,7 +530,10 @@ def build_back(fields):
     if label:  # e.g. a passport instead of a citizenship certificate: replace the printed label
         d.rectangle(P(*ID_LABEL_BOX[:2]) + P(*ID_LABEL_BOX[2:]), fill="white")
         d.text(P(*ID_LABEL[:2]), label, font=font("semibold", round(ID_LABEL[2] * SY)), fill=(53, 53, 53), anchor="rs")
-    for key, baseline in zip(BACK_FIELDS, BACK_BASELINES):
+    rows = list(zip(BACK_FIELDS, BACK_BASELINES))
+    if not str(values.get("nid_no") or "").strip():   # NID is optional
+        rows = drop_nid_row(page, rows)
+    for key, baseline in rows:
         v = str(values.get(key, "") or "").strip()
         if v:
             draw_value(d, key, v, baseline)
