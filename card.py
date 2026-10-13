@@ -46,7 +46,10 @@ VALID = (477, 987, 17)                      # centre x, baseline, cap height
 PHOTO_BOX = (0, 192, 365, 1011)             # area the person cut-out may use
 SIGN_BOX = (392, 808, 598, 917)             # cardholder signature area
 SIGN_BAR = (303, 923, 638, 962)             # red "Cardholder's Signature" bar
-BARCODE_SLOT = (362, 510, 618, 610)
+BARCODE_SLOT = (362, 510, 614, 628)       # below the designation's descenders, clear of the red shape
+ID_LABEL_BOX = (100, 198, 300, 234)         # "Citizenship No:" printed on the back template
+ID_LABEL = (295.5, 224, 17.5)               # its right edge, baseline, cap height (Poppins SemiBold)
+ID_LABELS = {"citizenship": None, "passport": "Passport No:"}   # None: keep the template's label
 BACK_VALUE_X, BACK_RIGHT = 311, 622
 BACK_BASELINES = [round(58 + 41.4 * i) for i in range(9)]
 BACK_CAP = 19
@@ -229,8 +232,20 @@ def cutout(photo):
 
 
 def signature_ink(img):
-    """Scanned/photographed signature -> dark ink on transparent background."""
-    g = ImageOps.exif_transpose(img).convert("L")
+    """
+    Signature -> ink on a transparent background. A digital signature PNG that is
+    already transparent keeps its own ink (and colour); a scan or photo of paper
+    becomes dark ink by brightness.
+    """
+    img = ImageOps.exif_transpose(img)
+    if img.mode in ("RGBA", "LA", "PA") or "transparency" in img.info:
+        rgba = img.convert("RGBA")
+        alpha = rgba.getchannel("A")
+        if alpha.getextrema()[0] < 250:   # transparent background (its hidden colour is often black)
+            bbox = alpha.point(lambda a: 255 if a > 16 else 0).getbbox()
+            return rgba.crop(bbox) if bbox else rgba
+        img = rgba.convert("RGB")
+    g = img.convert("L")
     g = ImageOps.autocontrast(g, cutoff=2)
     alpha = g.point(lambda v: 0 if v > 190 else min(255, (190 - v) * 2))
     ink = Image.new("RGBA", g.size, (20, 20, 20, 0))
@@ -253,22 +268,26 @@ def build_text(employee_id, name="", designation="", extra_lines=(), separator="
 
 def fit_pdf417(text, slot_w, slot_h):
     """
-    Most robust PDF417 that fits the slot (300 dpi px). Bars under 2 printer
-    dots (0.17 mm) do not scan reliably once printed; 3 dots is preferred.
+    Most robust PDF417 that fits the slot (300 dpi px = printer dots).
+    Wider bars matter most (3 dots preferred; 2 dots, 0.17 mm, is the smallest
+    that prints), then taller rows (2-3 bars high), then more error correction.
+    Returns (codes, module dots, row height dots, security level).
     """
     for module in (3, 2):
-        for security in (4, 3, 2):
-            for ratio in (3, 2):
-                for cols in range(1, 31):
-                    try:
-                        codes = encode(text, columns=cols, security_level=security)
-                    except Exception:
-                        continue
-                    w = (17 * (cols + 4) + 1) * module
-                    if w > slot_w:
-                        break
-                    if len(codes) * module * ratio <= slot_h:
-                        return codes, module, ratio, security
+        best = None
+        for security in (2, 3, 4):
+            for cols in range(1, 31):
+                if (17 * (cols + 4) + 1) * module > slot_w:
+                    break
+                try:
+                    codes = encode(text, columns=cols, security_level=security)
+                except Exception:
+                    continue
+                row = min(slot_h // len(codes), 3 * module)
+                if row >= 2 * module and (best is None or (row, security) > (best[2], best[3])):
+                    best = (codes, module, row, security)
+        if best:
+            return best
     return None
 
 
@@ -369,12 +388,14 @@ def build_front(fields, photo=None, signature=None, workdir="."):
     fit = fit_pdf417(text, s[2] - s[0], s[3] - s[1])
     if not fit:
         raise ValueError("The barcode text is too long to fit at a scannable size. Shorten the extra lines.")
-    codes, module, ratio, security = fit
-    bc = render_image(codes, scale=module * 2, ratio=ratio, padding=0).convert("RGB")
-    w300, h300 = bc.width / 2, bc.height / 2
-    bx1 = s[2] - 4
-    box = (bx1 - w300, s[1] + (s[3] - s[1] - h300) / 2, bx1, s[1] + (s[3] - s[1] + h300) / 2)
-    page.paste(bc, P(box[0], box[1]))
+    codes, module, row, security = fit
+    bc = render_image(codes, scale=1, ratio=1, padding=0).convert("RGB")      # 1 px per bar and per row
+    w300, h300 = bc.width * module, bc.height * row                          # printer dots
+    bc = bc.resize((w300 * 2, h300 * 2), Image.NEAREST)                       # 600 dpi page
+    # Even page pixels = whole printer dots, so every bar prints the same width.
+    x, y = (2 * round(v / 2) for v in P(s[2] - w300, s[1]))
+    page.paste(bc, (x, y))
+    box = (x / SX, y / SY, (x + bc.width) / SX, (y + bc.height) / SY)
 
     if can_scan():
         ok, decoded = verify_barcode(page, box, text, workdir)
@@ -382,7 +403,7 @@ def build_front(fields, photo=None, signature=None, workdir="."):
         ok, decoded = None, None
     info["k_boxes"] = [box]
     info.update(text=text, verified=ok, decoded=decoded, security_level=security,
-                module_mm=round(module * 25.4 / 300, 2),
+                module_mm=round(module * 25.4 / 300, 2), row_mm=round(row * 25.4 / 300, 2),
                 size_mm=[round(w300 * 25.4 / 300, 1), round(h300 * 25.4 / 300, 1)])
     return page, kmask([box]), info
 
@@ -429,6 +450,10 @@ def build_back(fields):
     values.setdefault("card_no", fields.get("employee_id", ""))
     if not values.get("card_no"):
         values["card_no"] = fields.get("employee_id", "")
+    label = ID_LABELS.get(fields.get("id_type") or "citizenship")
+    if label:  # e.g. a passport instead of a citizenship certificate: replace the printed label
+        d.rectangle(P(*ID_LABEL_BOX[:2]) + P(*ID_LABEL_BOX[2:]), fill="white")
+        d.text(P(*ID_LABEL[:2]), label, font=font("semibold", round(ID_LABEL[2] * SY)), fill=(53, 53, 53), anchor="rs")
     for key, baseline in zip(BACK_FIELDS, BACK_BASELINES):
         v = str(values.get(key, "") or "").strip()
         if v:

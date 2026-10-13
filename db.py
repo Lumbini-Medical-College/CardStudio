@@ -18,7 +18,7 @@ from paths import DATA
 
 DB_PATH = DATA / "cards.db"
 TEXT_FIELDS = ["employee_id", "name", "designation", "valid_from", "dob", "blood_group", "fh_name",
-               "citizenship_no", "nid_no", "address", "contact", "contact2"]
+               "citizenship_no", "nid_no", "address", "contact", "contact2", "id_type"]
 NUM_FIELDS = ["photo_scale", "photo_dx", "photo_dy"]
 
 _lock = threading.Lock()
@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS cards (
     dob            TEXT NOT NULL DEFAULT '',
     blood_group    TEXT NOT NULL DEFAULT '',
     fh_name        TEXT NOT NULL DEFAULT '',
-    citizenship_no TEXT NOT NULL DEFAULT '',
+    citizenship_no TEXT NOT NULL DEFAULT '',   -- or the passport number (see id_type)
+    id_type        TEXT NOT NULL DEFAULT 'citizenship',   -- 'citizenship' or 'passport'
     nid_no         TEXT NOT NULL DEFAULT '',
     address        TEXT NOT NULL DEFAULT '',
     contact        TEXT NOT NULL DEFAULT '',
@@ -94,6 +95,10 @@ def connect():
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     con.executescript(SCHEMA)
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(cards)")}
+    if "id_type" not in cols:   # databases from before the passport option
+        con.execute("ALTER TABLE cards ADD COLUMN id_type TEXT NOT NULL DEFAULT 'citizenship'")
+        con.commit()
     return con
 
 
@@ -111,6 +116,7 @@ def save(fields, photo=None, photo_cutout=None, signature=None, keep_images=True
         raise ValueError("Employee ID is required to save the card.")
     values = {k: str(fields.get(k) or "").strip() for k in TEXT_FIELDS}
     values["employee_id"] = eid
+    values["id_type"] = "passport" if values["id_type"] == "passport" else "citizenship"
     values.update({k: float(fields.get(k) or (1 if k == "photo_scale" else 0)) for k in NUM_FIELDS})
     values["extra_lines"] = json.dumps([l for l in fields.get("extra_lines", []) if str(l).strip()])
     cols = list(values)
@@ -129,7 +135,7 @@ def save(fields, photo=None, photo_cutout=None, signature=None, keep_images=True
 
 
 def search(q="", limit=20):
-    """Match ID, name, designation, phone numbers, NID or citizenship number."""
+    """Match ID, name, designation, phone numbers, NID or citizenship/passport number."""
     like = f"%{q.strip()}%"
     with _lock:
         rows = _con.execute(
