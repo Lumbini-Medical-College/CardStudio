@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS cards (
     photo          BLOB,          -- original upload
     photo_cutout   BLOB,          -- PNG with transparent background
     signature      BLOB,
+    auth_signature BLOB,          -- authorised signatory's signature used on this card
     barcode        TEXT NOT NULL DEFAULT '',   -- JSON: exact barcode settings, so reprints match
     created_at     TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     updated_at     TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
@@ -101,6 +102,8 @@ def connect():
         con.execute("ALTER TABLE cards ADD COLUMN id_type TEXT NOT NULL DEFAULT 'citizenship'")
     if "barcode" not in cols:   # databases from before saved barcodes
         con.execute("ALTER TABLE cards ADD COLUMN barcode TEXT NOT NULL DEFAULT ''")
+    if "auth_signature" not in cols:
+        con.execute("ALTER TABLE cards ADD COLUMN auth_signature BLOB")
     con.commit()
     return con
 
@@ -108,12 +111,14 @@ def connect():
 _con = connect()
 
 
-def save(fields, photo=None, photo_cutout=None, signature=None, keep_images=True, barcode=None):
+def save(fields, photo=None, photo_cutout=None, signature=None, keep_images=True, barcode=None,
+         auth_signature=None):
     """Insert or update by employee_id. Returns the card id.
 
     photo/photo_cutout/signature are bytes; None keeps what is stored
     (unless keep_images is False, e.g. the signature was removed).
-    barcode is the dict of barcode settings; None keeps what is stored.
+    barcode is the dict of barcode settings and auth_signature the authorised
+    signature's bytes; None keeps what is stored.
     """
     eid = (fields.get("employee_id") or "").strip()
     if not eid:
@@ -134,6 +139,8 @@ def save(fields, photo=None, photo_cutout=None, signature=None, keep_images=True
         card_id = _con.execute("SELECT id FROM cards WHERE employee_id=?", (eid,)).fetchone()["id"]
         if barcode is not None:
             _con.execute("UPDATE cards SET barcode=? WHERE id=?", (json.dumps(barcode), card_id))
+        if auth_signature is not None:
+            _con.execute("UPDATE cards SET auth_signature=? WHERE id=?", (auth_signature, card_id))
         for col, blob in (("photo", photo), ("photo_cutout", photo_cutout), ("signature", signature)):
             if blob is not None or (col == "signature" and not keep_images):
                 _con.execute(f"UPDATE cards SET {col}=? WHERE id=?", (blob, card_id))

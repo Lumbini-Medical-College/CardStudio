@@ -221,6 +221,12 @@ try { const t = localStorage.getItem("cs-theme"); if (t === "light" || t === "da
         <div><label for="contact">Contact Number</label><input type="text" id="contact" placeholder="982 000 0000"></div>
         <div><label for="contact2">2nd Contact</label><input type="text" id="contact2" placeholder="9801 000 003"></div>
       </div>
+      <label>Authorised signature</label>
+      <div class="drop" id="dropAuth"><span>Loading the authorised signature…</span><input type="file" accept="image/*" id="fileAuth"></div>
+      <div class="row" id="authRow" hidden>
+        <button class="link" id="authDefault" type="button">Use this signature for new cards</button>
+        <button class="link" id="authReset" type="button">Back to the usual signature</button>
+      </div>
     </section>
   </div>
 
@@ -256,7 +262,7 @@ const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "
 const FIELDS = ["employee_id", "name", "designation", "valid_from", "extra_lines", "dob", "blood_group",
                 "fh_name", "id_type", "citizenship_no", "nid_no", "address", "contact", "contact2"];
 const SIGN_TEXT = "Drop or click to add the signature<br><small>A PNG with a transparent background works best</small>";
-const state = { photo: null, signature: null, ready: false, barcode: null };   // barcode: exact settings, kept with the card
+const state = { photo: null, signature: null, ready: false, barcode: null, authSignature: null, authDefault: null };   // barcode: exact settings, kept with the card
 
 function log(msg, isErr) { $("log").innerHTML = isErr ? `<span class="err">${esc(msg)}</span>` : esc(msg); }
 function readFile(file) {
@@ -287,6 +293,26 @@ wireDrop("dropPhoto", "filePhoto", async f => {
   state.photo = await readFile(f); showFile("dropPhoto", state.photo, f.name);
   $("photoAdjust").hidden = false; log("Removing photo background…"); render();
 });
+// authorised signatory: new cards get the usual one; a card can use a different one (saved with it)
+function setAuth(url, label) {
+  state.authSignature = url;
+  if (url) showFile("dropAuth", url, label);
+  $("authRow").hidden = !url || url === state.authDefault;
+}
+api("/api/auth-signature").then(d => {
+  state.authDefault = d.image;
+  if (!state.authSignature) { setAuth(d.image, "Usual signature"); render(); }
+}).catch(e => log(e.message, true));
+wireDrop("dropAuth", "fileAuth", async f => { setAuth(await readFile(f), f.name); markDirty(); render(); });
+$("authDefault").addEventListener("click", async () => {
+  try {
+    const d = await api("/api/auth-signature", { image: state.authSignature });
+    state.authDefault = d.image; setAuth(d.image, "Usual signature");
+    log("New cards will use this authorised signature."); render();
+  } catch (e) { log(e.message, true); }
+});
+$("authReset").addEventListener("click", () => { setAuth(state.authDefault, "Usual signature"); markDirty(); render(); });
+
 wireDrop("dropSign", "fileSign", async f => {
   state.signature = await readFile(f); showFile("dropSign", state.signature, f.name); $("signClear").hidden = false; render();
 });
@@ -335,7 +361,8 @@ async function render() {
   rendering = true; state.ready = false; refreshButtons();
   $("pvFront").classList.add("loading"); $("pvBack").classList.add("loading");
   try {
-    const d = await api("/api/render", { fields: collect(), photo: state.photo, signature: state.signature, barcode: state.barcode });
+    const d = await api("/api/render", { fields: collect(), photo: state.photo, signature: state.signature, barcode: state.barcode,
+                                         auth_signature: state.authSignature });
     state.barcode = d.front.barcode;
     $("pvFront").innerHTML = `<img src="${d.front.preview}" alt="Front of card">`;
     $("pvBack").innerHTML = `<img src="${d.back.preview}" alt="Back of card">`;
@@ -531,7 +558,8 @@ function markDirty() { if (state.cardId) setCardState(`${$("employee_id").value}
 for (const id of [...FIELDS, "photo_scale", "photo_dx", "photo_dy"]) $(id).addEventListener("input", markDirty);
 
 async function saveCard(quiet) {
-  const d = await api("/api/cards", { fields: collect(), photo: state.photo, signature: state.signature, barcode: state.barcode });
+  const d = await api("/api/cards", { fields: collect(), photo: state.photo, signature: state.signature, barcode: state.barcode,
+                                      auth_signature: state.authSignature });
   state.cardId = d.id;
   setCardState(`${$("employee_id").value} · saved`);
   if (!quiet) log("Saved.");
@@ -548,6 +576,7 @@ function clearForm() {
   state.photo = state.signature = state.barcode = null; state.cardId = null; state.ready = false;
   resetDrop("dropPhoto", "Drop or click to add the employee photo<br><small>Background is removed automatically</small>");
   resetDrop("dropSign", SIGN_TEXT);
+  setAuth(state.authDefault, "Usual signature");
   $("photoAdjust").hidden = true; $("signClear").hidden = true;
   $("pvFront").textContent = "Add a photo and details"; $("pvBack").textContent = "Back side";
   $("infoFront").innerHTML = $("infoBack").innerHTML = "";
@@ -565,6 +594,7 @@ async function loadCard(id) {
     $("id_type").value = c.id_type === "passport" ? "passport" : "citizenship"; idTypeChanged();
     $("photo_scale").value = c.photo_scale; $("photo_dx").value = c.photo_dx; $("photo_dy").value = c.photo_dy; updateOutputs();
     if (c.photo) { state.photo = c.photo; showFile("dropPhoto", c.photo, "Saved photo"); $("photoAdjust").hidden = false; }
+    if (c.auth_signature) setAuth(c.auth_signature, "Saved with this card");
     if (c.signature) { state.signature = c.signature; showFile("dropSign", c.signature, "Saved signature"); $("signClear").hidden = false; }
     state.cardId = c.id;
     const fronts = c.history.filter(h => h.side === "front");

@@ -95,6 +95,22 @@ def person(data_url):
     return cutouts[key]
 
 
+# --- authorised signature -----------------------------------------------------------
+AUTH_SIGNATURE = DATA / "authorised_signature.png"   # chosen with "Use this signature for new cards"
+
+
+def default_auth_signature():
+    """Signature new cards get: the one chosen in the app, else the one shipped with it."""
+    return (AUTH_SIGNATURE if AUTH_SIGNATURE.exists() else card.AUTH_SIGN_DEFAULT).read_bytes()
+
+
+def set_default_auth_signature(data_url):
+    img = decode_image(data_url)
+    img.load()
+    AUTH_SIGNATURE.write_bytes(png_bytes(img.convert("RGBA")))   # stored as a clean PNG
+    return {"image": to_data_url(default_auth_signature())}
+
+
 # --- cards --------------------------------------------------------------------------
 def save_card(body):
     """Store the current form, photo, cut-out and signature. Returns the card id."""
@@ -106,8 +122,9 @@ def save_card(body):
     if not (isinstance(barcode, dict) and isinstance(barcode.get("text"), str)
             and barcode.get("source") == card.barcode_source(fields)):
         barcode = None
+    auth = data_bytes(body["auth_signature"]) if body.get("auth_signature") else None
     return db.save(fields, data_bytes(photo) if photo else None, cut,
-                   signature, keep_images=bool(signature), barcode=barcode)
+                   signature, keep_images=bool(signature), barcode=barcode, auth_signature=auth)
 
 
 def load_card(card_id):
@@ -122,6 +139,7 @@ def load_card(card_id):
         cutouts[photo_key(photo)] = img
     c["photo"] = photo
     c["signature"] = to_data_url(c.pop("signature"))
+    c["auth_signature"] = to_data_url(c.pop("auth_signature"))
     return c
 
 
@@ -130,7 +148,9 @@ def render(body, owner):
     photo = person(body["photo"]) if body.get("photo") else None
     signature = decode_image(body["signature"]) if body.get("signature") else None
     front, front_mask, front_info = card.build_front(fields, photo, signature, WORK, body.get("barcode"))
-    back, back_mask, back_info = card.build_back(fields)
+    auth = (decode_image(body["auth_signature"]) if body.get("auth_signature")
+            else Image.open(io.BytesIO(default_auth_signature())))
+    back, back_mask, back_info = card.build_back(fields, auth)
     built[owner] = {
         "front": {"page": front, "mask": front_mask, "boxes": front_info.pop("k_boxes")},
         "back": {"page": back, "mask": back_mask, "boxes": back_info.pop("k_boxes")},
@@ -309,6 +329,8 @@ class Handler(BaseHTTPRequestHandler):
             if MODE != "local":
                 return self.send_json({"current": VERSION, "available": False})
             return self.send_json(updater.check(force="force" in parse_qs(url.query)))
+        if path == "/api/auth-signature":
+            return self.send_json({"image": to_data_url(default_auth_signature())})
         if path == "/api/update/progress":
             return self.send_json(updater.progress)
         if path == "/api/cards":
@@ -351,6 +373,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/cards":
                 with lock:
                     return self.send_json({"id": save_card(body)})
+            if path == "/api/auth-signature":
+                return self.send_json(set_default_auth_signature(body["image"]))
             if path == "/api/decode":
                 return self.send_json(decode_barcode(body))
             if path == "/api/printer":

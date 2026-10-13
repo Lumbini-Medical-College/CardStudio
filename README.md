@@ -101,7 +101,9 @@ Other commands: `python run.py --users` (list logins), `--del-user NAME`.
 1. Fill in the form (or search a saved card at the top), add the photo and the cardholder's
    signature (a PNG with a transparent background works best; a photo of a signature on white
    paper also works). For a passport instead of a citizenship certificate, switch the
-   "Citizenship No" label on the back to "Passport No".
+   "Citizenship No" label on the back to "Passport No". The authorised signatory's signature on the back
+   is the usual one unless you upload a different one for that card; "Use this signature
+   for new cards" makes it the usual one (kept in `data/authorised_signature.png`).
 2. Load a blank card and press **Print front**.
 3. Put the same card back in, printed side down, same end first, and press **Print back**.
 

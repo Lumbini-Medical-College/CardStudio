@@ -57,7 +57,10 @@ BACK_VALUE_X, BACK_RIGHT = 311, 622
 BACK_BASELINES = [round(58 + 41.4 * i) for i in range(9)]
 BACK_CAP = 19
 BACK_BELOW_NID = (282, 402)                 # band holding the rows under "NID No:" (above the red band)
-BACK_QR_BOX = (58, 863, 166, 971)           # QR on the back template (used if no reader is available)
+BACK_QR_BOX = (58, 863, 166, 971)
+AUTH_SIGN_ERASE = (366, 826, 602, 938)      # signature printed on the back template (above the red line)
+AUTH_SIGN_BOX = (352, 838, 582, 935)        # where the authorised signature goes
+AUTH_SIGN_DEFAULT = TEMPLATES / "authorised_signature.png"           # QR on the back template (used if no reader is available)
 BACK_FIELDS = ["card_no", "dob", "blood_group", "fh_name", "citizenship_no",
                "nid_no", "address", "contact", "contact2"]
 TITLES = {"dr", "dr.", "mr", "mr.", "mrs", "mrs.", "ms", "ms.", "prof", "prof.", "er", "er."}
@@ -398,6 +401,16 @@ def place_photo(page, cut, scale=1.0, dx=0, dy=0):
     page.alpha_composite(person, (left, top)) if page.mode == "RGBA" else page.paste(person, (left, top), person)
 
 
+def draw_signature(page, img, box):
+    """Signature as large as fits the box (design px), centred and sitting on its bottom edge."""
+    ink = signature_ink(img)
+    x0, y0, x1, y1 = box
+    k = min((x1 - x0) * SX / ink.width, (y1 - y0) * SY / ink.height)
+    ink = ink.resize((max(1, round(ink.width * k)), max(1, round(ink.height * k))), Image.LANCZOS)
+    cx, bottom = (x0 + x1) / 2 * SX, y1 * SY
+    page.paste(ink, (round(cx - ink.width / 2), round(bottom - ink.height)), ink)
+
+
 def build_front(fields, photo=None, signature=None, workdir=".", barcode=None):
     """
     barcode: the card's saved barcode ({"text", "columns", "security", "module", "row",
@@ -432,12 +445,7 @@ def build_front(fields, photo=None, signature=None, workdir=".", barcode=None):
         d.text(P(VALID[0], VALID[1]), t, font=fit_font(d, t, "regular", VALID[2] * SY, 300 * SX), fill=INK, anchor="ms")
 
     if signature is not None:
-        ink = signature_ink(signature)
-        x0, y0, x1, y1 = SIGN_BOX
-        k = min((x1 - x0) * SX / ink.width, (y1 - y0) * SY / ink.height)
-        ink = ink.resize((max(1, round(ink.width * k)), max(1, round(ink.height * k))), Image.LANCZOS)
-        cx, bottom = (x0 + x1) / 2 * SX, y1 * SY
-        page.paste(ink, (round(cx - ink.width / 2), round(bottom - ink.height)), ink)
+        draw_signature(page, signature, SIGN_BOX)
 
     # barcode
     if not fields.get("employee_id", "").strip():
@@ -519,7 +527,8 @@ def drop_nid_row(page, rows):
     return rows[:i] + [(k, b - shift) for k, b in rows[i + 1:]]
 
 
-def build_back(fields):
+def build_back(fields, auth_signature=None):
+    """auth_signature: the authorised signatory's signature image (replaces the one in the template)."""
     page = template("back").copy()
     d = ImageDraw.Draw(page)
     values = dict(fields)
@@ -537,5 +546,8 @@ def build_back(fields):
         v = str(values.get(key, "") or "").strip()
         if v:
             draw_value(d, key, v, baseline)
+    if auth_signature is not None:
+        d.rectangle(P(*AUTH_SIGN_ERASE[:2]) + P(*AUTH_SIGN_ERASE[2:]), fill="white")
+        draw_signature(page, auth_signature, AUTH_SIGN_BOX)
     boxes = [crisp_code(page, box) for _, _, box in back_codes()]
     return page, kmask(boxes), {"codes": [{"type": t, "payload": p} for t, p, _ in back_codes()], "k_boxes": boxes}
