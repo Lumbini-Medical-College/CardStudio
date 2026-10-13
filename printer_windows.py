@@ -42,10 +42,12 @@ def list_printers():
 
 
 def find_printer():
-    """The printer named in CARD_PRINTER (run.py --printer or the app's printer menu),
-    else the first Entrust/SD160 printer."""
-    if os.environ.get("CARD_PRINTER"):
-        return os.environ["CARD_PRINTER"]
+    """The printer chosen in the app's printer list (or run.py / agent.py --printer)."""
+    return os.environ.get("CARD_PRINTER") or None
+
+
+def suggest_printer():
+    """First installed printer that looks like the Entrust/SD160, for the agent's first run."""
     names = list_printers()
     for hint in NAME_HINTS:
         for n in names:
@@ -55,20 +57,20 @@ def find_printer():
 
 
 def status():
-    result = {"link": False, "status": "Offline", "ribbon": None, "model": None, "serial": None,
-              "queue": [], "message": ""}
+    result = {"link": False, "can_print": False, "status": "Offline", "ribbon": None, "model": None,
+              "serial": None, "queue": [], "message": ""}
     if win32print is None:
         result["message"] = "pywin32 is not installed. Run: python run.py --setup"
         return result
     name = find_printer()
     if not name:
-        result["message"] = "No Entrust card printer found. Install the XPS Card Printer Driver."
+        result.update(status="Not selected", message="Choose the card printer from the printer list.")
         return result
     result["model"] = name
     try:
         h = win32print.OpenPrinter(name)
     except Exception:
-        result["message"] = f"Printer \"{name}\" isn't installed. Pick another in the printer menu."
+        result["message"] = f"Printer \"{name}\" isn't installed. Choose another from the printer list."
         return result
     try:
         info = win32print.GetPrinter(h, 2)
@@ -76,16 +78,18 @@ def status():
     finally:
         win32print.ClosePrinter(h)
     st, attrs = info["Status"], info["Attributes"]
-    result["queue"] = [str(j["JobId"]) for j in jobs]
+    result.update(link=True, can_print=True, queue=[str(j["JobId"]) for j in jobs])
     problems = [msg for key, msg in MESSAGES.items() if st & S[key]]
+    # The card printer driver often tells Windows "offline" while the printer is fine (e.g. asleep),
+    # so that is only a note: the person at the printer can see whether it is really on.
     if attrs & WORK_OFFLINE or st & (S["OFFLINE"] | S["NOT_AVAILABLE"]):
-        result["message"] = "Printer is offline. Check it is on and the USB cable is connected."
-    elif st & (S["ERROR"] | S["PAPER_JAM"] | S["PAPER_OUT"] | S["NO_TONER"] | S["DOOR_OPEN"] | S["USER_INTERVENTION"]):
-        result.update(link=True, status="Error", message="; ".join(problems) or "Printer error")
+        problems.append("Windows reports it offline; you can still print")
+    if st & (S["ERROR"] | S["PAPER_JAM"] | S["PAPER_OUT"] | S["NO_TONER"] | S["DOOR_OPEN"] | S["USER_INTERVENTION"]):
+        result.update(status="Error", message="; ".join(problems) or "Printer error")
     elif st & (S["BUSY"] | S["PRINTING"] | S["PROCESSING"]) or result["queue"]:
-        result.update(link=True, status="Busy", message="; ".join(problems))
+        result.update(status="Busy", message="; ".join(problems))
     else:
-        result.update(link=True, status="Ready", message="; ".join(problems))
+        result.update(status="Ready", message="; ".join(problems))
     return result
 
 
@@ -100,7 +104,7 @@ def print_card(job, title):
         raise RuntimeError("pywin32 is not installed. Run: python run.py --setup")
     name = find_printer()
     if not name:
-        raise RuntimeError("No Entrust card printer found. Install the XPS Card Printer Driver.")
+        raise RuntimeError("Choose the card printer from the printer list first.")
 
     h = win32print.OpenPrinter(name)
     try:

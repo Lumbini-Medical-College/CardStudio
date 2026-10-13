@@ -49,6 +49,9 @@ try { const t = localStorage.getItem("cs-theme"); if (t === "light" || t === "da
   @media (prefers-reduced-motion: reduce) { .iconbtn.spin svg { animation: none; } }
   .menu { position: absolute; top: calc(100% + 8px); right: 0; width: min(340px, calc(100vw - 32px)); background: var(--panel);
           border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.18); padding: 14px 16px; z-index: 6; }
+  .printer-pick { max-width: 220px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px;
+                  background: var(--field); color: var(--ink); font: inherit; font-size: 13px; }
+  .printer-pick.need { border-color: var(--brand); outline: 2px solid color-mix(in srgb, var(--brand) 30%, transparent); }
   .menu select { width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--field);
                  color: var(--ink); font: inherit; }
   .menu dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
@@ -140,6 +143,7 @@ try { const t = localStorage.getItem("cs-theme"); if (t === "light" || t === "da
     <div class="results" id="results" role="listbox" hidden></div>
   </div>
   <div class="tools">
+    <select id="printerSel" class="printer-pick" aria-label="Card printer" title="Card printer" hidden></select>
     <button class="pill" id="status" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="printerMenu"
             title="Printer details"><span class="dot"></span><span>Checking printer…</span></button>
     <button class="iconbtn" id="refreshPrinter" type="button" title="Refresh printer" aria-label="Refresh printer"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg></button>
@@ -147,10 +151,6 @@ try { const t = localStorage.getItem("cs-theme"); if (t === "light" || t === "da
     <div class="menu" id="printerMenu" role="dialog" aria-label="Printer" hidden>
       <h2>Printer</h2>
       <dl id="pmStatus"></dl>
-      <div id="pmPick" hidden>
-        <label for="printerSel">Print with</label>
-        <select id="printerSel"></select>
-      </div>
       <div class="foot"><small id="pmChecked"></small><button class="ghost" id="pmRefresh" type="button">Refresh</button></div>
     </div>
   </div>
@@ -392,26 +392,27 @@ async function pollStatus() {
   try {
     const s = lastStatus = await api("/api/status");
     lastStatus.checked = new Date();
-    const busy = s.status === "Busy" || s.queue.length;
-    printerReady = s.link && s.status === "Ready" && !s.queue.length;
-    const cls = printerReady ? "ready" : busy ? "busy" : "off";
+    // Printing is allowed whenever a printer is chosen and installed; the person at the printer checks it is on.
+    printerReady = !!s.can_print;
+    const cls = !s.can_print ? "off" : s.status === "Ready" && !s.message ? "ready" : "busy";
     const ribbon = s.ribbon ? ` · ribbon ${s.ribbon}%` : "";
-    $("status").innerHTML = `<span class="dot ${cls}"></span><span>${esc(s.model || "SD160")} ${esc(s.status)}${ribbon}${s.message ? " · " + esc(s.message) : ""}</span>`;
+    $("status").innerHTML = `<span class="dot ${cls}"></span><span>${esc(s.model || "Printer")} ${esc(s.status)}${ribbon}${s.message ? " · " + esc(s.message) : ""}</span>`;
   } catch (e) {
     $("status").innerHTML = `<span class="dot off"></span><span>Status unavailable</span>`;
     lastStatus = { status: "Unavailable", message: e.message, queue: [], checked: new Date() };
   }
   polling = false; refreshButtons(); showPrinterMenu();
-  statusTimer = setTimeout(pollStatus, printerReady ? 10000 : 4000);
+  statusTimer = setTimeout(pollStatus, lastStatus.status === "Ready" ? 10000 : 4000);
 }
 
 // printer menu: details, which printer to use, refresh now
 async function loadPrinters() {
   try {
     const p = await api("/api/printers");
-    $("pmPick").hidden = !p.printers.length;
+    $("printerSel").hidden = !p.printers.length;          // Windows only; the Mac has one fixed queue
+    $("printerSel").classList.toggle("need", !p.selected);
     const opt = (value, text, sel) => `<option value="${esc(value)}"${sel ? " selected" : ""}>${esc(text)}</option>`;
-    const opts = [opt("", "Automatic (first Entrust / SD160 printer)", !p.selected),
+    const opts = [`<option value="" disabled${p.selected ? "" : " selected"}>Choose card printer…</option>`,
                   ...p.printers.map(n => opt(n, n, n === p.selected))];
     if (p.selected && !p.printers.includes(p.selected)) opts.push(opt(p.selected, `${p.selected} (not found)`, true));
     $("printerSel").innerHTML = opts.join("");
@@ -435,7 +436,7 @@ async function refreshPrinter() {
 }
 function toggleMenu(open) {
   $("printerMenu").hidden = !open; $("status").setAttribute("aria-expanded", String(open));
-  if (open) { showPrinterMenu(); loadPrinters(); }
+  if (open) showPrinterMenu();
 }
 $("status").addEventListener("click", () => toggleMenu($("printerMenu").hidden));
 $("refreshPrinter").addEventListener("click", refreshPrinter);
@@ -585,7 +586,7 @@ $("search").addEventListener("keydown", e => {
   else if (e.key === "Escape") { closeResults(); $("search").blur(); }
 });
 
-updateOutputs(); pollStatus(); log("Enter the Employee ID to build the card.");
+updateOutputs(); loadPrinters(); pollStatus(); log("Enter the Employee ID to build the card.");
 </script>
 </body>
 </html>

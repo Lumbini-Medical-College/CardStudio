@@ -18,15 +18,17 @@ printer PC; the printer PC does **not** need Python.
 2. In **Printing preferences**: ribbon **YMCKT**, and turn on K-panel (black panel) printing
    for black text / monochrome images if offered, so the barcode and QR print sharp.
 3. Double-click **CardStudio.exe**. It opens in its own window and prints directly.
+4. Choose the card printer from the printer list at the top (once; it is remembered).
 
 Your data lives in `CardStudio\data\` (`cards.db` = saved cards; back it up). To bring
-existing cards, put your `cards.db` there before starting. If the printer isn't found,
-write its exact name in `data\settings.json`: `{"printer": "XPS Card Printer"}`.
+existing cards, put your `cards.db` there before starting. The chosen printer is kept in
+`data\settings.json`.
 Problems are logged to `data\cardstudio.log`.
 
-**Printer menu:** click the printer status at the top to see its details and pick which
-installed printer to use (saved in `data\settings.json`). The ↻ button checks the printer
-again right away, e.g. after plugging it in.
+**Printer:** pick the card printer from the list at the top. The Print buttons work whenever
+a printer is chosen, even if Windows reports it offline (card printer drivers often do while
+the printer sleeps), so check the printer is on and loaded. Click the status to see details;
+the ↻ button checks again right away and reloads the printer list, e.g. after plugging it in.
 
 **Light / dark:** the button next to it switches between the computer's setting, light and dark.
 

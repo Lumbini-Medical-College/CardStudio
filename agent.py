@@ -11,7 +11,7 @@ First time (saves agent.json next to this file):
 Afterwards:
     python agent.py            (or double-click start_agent.bat)
 Options:
-    --printer "XPS Card Printer"   exact Windows printer name, if not found automatically
+    --printer "XPS Card Printer"   exact Windows printer name (first run picks the Entrust printer)
     --insecure                     accept a self-signed HTTPS certificate
 """
 
@@ -104,6 +104,13 @@ def main():
     if not cfg.get("server") or not cfg.get("key"):
         sys.exit("First run: python agent.py --server http://<server-ip>:8765 --key <agent key>")
     CONFIG.write_text(json.dumps(cfg, indent=2))
+    if not cfg.get("printer") and sys.platform == "win32":   # first run: take the Entrust printer, remember it
+        import printer_windows
+        cfg["printer"] = printer_windows.suggest_printer()
+        if not cfg["printer"]:
+            sys.exit('No Entrust card printer found. Run: python agent.py --printer "Exact Printer Name"')
+        CONFIG.write_text(json.dumps(cfg, indent=2))
+        log(f"Using printer {cfg['printer']} (change with --printer)")
     if cfg.get("printer"):
         os.environ["CARD_PRINTER"] = cfg["printer"]
 

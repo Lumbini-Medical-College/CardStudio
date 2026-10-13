@@ -86,7 +86,8 @@ def list_printers():
 def status():
     """Return printer status from the driver: ready/busy, ribbon %, model, serial, message."""
     ensure_relay()
-    result = {"link": printer_reachable(), "status": "Offline", "ribbon": None,
+    reachable = printer_reachable()
+    result = {"link": reachable, "can_print": reachable, "status": "Offline", "ribbon": None,
               "model": None, "serial": None, "queue": [], "message": ""}
     if not result["link"]:
         result["message"] = "Printer not responding. Make sure it is on, then unplug and replug its USB cable."

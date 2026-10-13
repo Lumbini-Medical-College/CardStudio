@@ -166,10 +166,11 @@ def printer_status():
         return printer.status()
     queue = [str(j["id"]) for j in db.active_jobs()]
     if time.time() - agent["seen"] > AGENT_TIMEOUT or not agent["status"]:
-        return {"link": False, "status": "Offline", "ribbon": None, "model": None, "serial": None,
+        return {"link": False, "can_print": False, "status": "Offline", "ribbon": None, "model": None, "serial": None,
                 "queue": queue, "message": "Print station offline. Start agent.py on the printer PC."}
     s = dict(agent["status"])
     s["queue"] = queue
+    s["can_print"] = True   # queued jobs wait for the print station
     if queue and s.get("status") == "Ready":
         s["status"] = "Busy"
     return s
@@ -182,7 +183,7 @@ def printers():
 
 
 def choose_printer(name):
-    """Use this printer from now on ("" = first Entrust printer found). Kept in data/settings.json."""
+    """Print with this printer from now on. Kept in data/settings.json."""
     name = str(name or "")
     if name and name not in printers()["printers"]:
         raise ValueError(f"Printer \"{name}\" isn't installed.")
@@ -207,8 +208,6 @@ def print_side(body, owner, user):
         raise ValueError("Build the card first.")
     if MODE == "local":
         import printer
-        if printer.status()["queue"]:
-            raise ValueError("The printer is still busy with the previous card.")
         job_id = printer.print_card(job, f"Card {side}")
         if body.get("card_id"):
             db.log_print(int(body["card_id"]), side, job_id)
@@ -392,6 +391,11 @@ class Handler(BaseHTTPRequestHandler):
 def serve(port=PORT, mode="local", host=None, certfile=None, keyfile=None):
     global MODE, SECURE
     MODE = mode
+    if mode == "local" and not os.environ.get("CARD_PRINTER"):   # printer chosen in the app last time
+        try:
+            os.environ["CARD_PRINTER"] = json.loads((DATA / "settings.json").read_text()).get("printer") or ""
+        except (OSError, ValueError):
+            pass
     host = host or ("0.0.0.0" if mode == "server" else "127.0.0.1")
     httpd = ThreadingHTTPServer((host, port), Handler)
     scheme = "http"

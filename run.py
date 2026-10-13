@@ -111,7 +111,8 @@ def check(verbose=True):
         if IS_WINDOWS and "--server" not in sys.argv:
             if has("win32print"):
                 import printer_windows
-                lines.append(f"  Printer:             {printer_windows.find_printer() or 'NOT FOUND - install the Entrust XPS Card Printer Driver'}")
+                chosen = printer_windows.find_printer()
+                lines.append(f"  Printer:             {chosen or 'choose it in the app (printer list at the top)'}")
             else:
                 lines.append("  Printer:             pywin32 missing -> python run.py --setup")
         elif "--server" in sys.argv:
