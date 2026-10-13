@@ -14,7 +14,7 @@ import time
 PRINTER_MAC = bytes.fromhex("00024e262c8c")
 OFFER, MASK = "169.254.55.100", "255.255.0.0"
 IP_BOUND_IF = 25
-RELAY_PORTS = (9100, 80)
+RELAYS = {9100: 9100, 8080: 80}   # local port -> printer port (8080: the printer's own Printer Manager page)
 HEALTH_PORT = 9199      # answers "up" or "down": can the printer be reached over the USB link?
 current_iface = None
 
@@ -47,7 +47,8 @@ def serve(iface, server_ip, index):
     print(time.strftime("%X"), f"serving {iface} #{index} ({server_ip})", flush=True)
     last_check = time.time()
     while True:
-        if time.time() - last_check > 10:  # link gone or renamed -> rediscover
+        if time.time() - last_check > 2:  # link gone or renamed -> rediscover quickly: a printer that just
+                                           # woke up asks for its address only for a short while
             last_check = time.time()
             if find_link() != (iface, server_ip, index):
                 s.close()
@@ -95,8 +96,8 @@ def pump(src, dst):
                 pass
 
 
-def relay(port):
-    """127.0.0.1:port -> printer:port, sent out of the printer's USB link only."""
+def relay(port, printer_port):
+    """127.0.0.1:port -> printer:printer_port, sent out of the printer's USB link only."""
     lst = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     lst.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
@@ -112,7 +113,7 @@ def relay(port):
             if current_iface:
                 up.setsockopt(socket.IPPROTO_IP, IP_BOUND_IF, socket.if_nametoindex(current_iface))
             up.settimeout(5)
-            up.connect((OFFER, port))
+            up.connect((OFFER, printer_port))
             up.settimeout(None)
         except OSError as e:
             print(time.strftime("%X"), f"relay {port}: printer not reachable ({e})", flush=True)
@@ -148,8 +149,8 @@ def health():
 
 if __name__ == "__main__":
     threading.Thread(target=health, daemon=True).start()
-    for p in RELAY_PORTS:
-        threading.Thread(target=relay, args=(p,), daemon=True).start()
+    for local, remote in RELAYS.items():
+        threading.Thread(target=relay, args=(local, remote), daemon=True).start()
     while True:
         link = find_link()
         current_iface = link[0] if link else None
@@ -158,4 +159,4 @@ if __name__ == "__main__":
                 serve(*link)
             except OSError as e:
                 print(time.strftime("%X"), "link error:", e, flush=True)
-        time.sleep(3)
+        time.sleep(1)

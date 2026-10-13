@@ -83,6 +83,11 @@ def list_printers():
     return []
 
 
+def usb_present():
+    """Does the Mac see the SD160 on USB at all?"""
+    return "SD160" in run(["ioreg", "-p", "IOUSB", "-w0"]).stdout
+
+
 def status():
     """Return printer status from the driver: ready/busy, ribbon %, model, serial, message."""
     ensure_relay()
@@ -90,7 +95,11 @@ def status():
     result = {"link": reachable, "can_print": reachable, "status": "Offline", "ribbon": None,
               "model": None, "serial": None, "queue": [], "message": ""}
     if not result["link"]:
-        result["message"] = "Printer not responding. Make sure it is on, then unplug and replug its USB cable."
+        # After a few idle minutes the SD160 sleeps: it stays on USB but stops answering until woken.
+        result["message"] = ("Printer is asleep. Press the button on the printer to wake it; "
+                             "if it stays offline, unplug and replug its USB cable.") if usb_present() else (
+                             "The Mac can't see the printer. Check it is switched on and its USB cable is "
+                             "plugged in (directly into the Mac works best).")
         return result
     try:
         r = dexec(STATUS_TOOL)

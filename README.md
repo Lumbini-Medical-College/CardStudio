@@ -65,8 +65,13 @@ If the printer has a different name: `python run.py --printer "Exact Printer Nam
 The SD160 has no Mac driver. It prints through Entrust's Linux driver in the Docker
 container `sd160-cups`; `printer_link.py` gives the printer its address over USB and
 relays the driver's connection. Docker Desktop must be running. Start with
-**start.command** or `python3 run.py`. If the printer shows offline, unplug and
-replug its USB cable.
+**start.command** or `python3 run.py`.
+
+After a few idle minutes the SD160 goes to sleep: it stays on USB but stops answering, and the
+app shows "Printer is asleep". Press the printer's button (or unplug and replug its USB cable)
+to wake it. To make it sleep less, open the printer's own Printer Manager page at
+http://localhost:8080 while the app is running, sign in as WebAdmin and lengthen the sleep
+time. Plug the printer straight into the Mac where possible; through a USB-C hub it can drop off.
 
 ## Server mode (shared server + print station)
 
