@@ -376,7 +376,7 @@ async function render() {
       `<div class="badge warn" style="margin-top:8px">No cardholder signature: the signature space will print blank. Add it under Photo &amp; signature.</div>`;
     $("infoBack").innerHTML = d.back.codes.length
       ? `<div class="badge ok">${d.back.codes.map(c => `${esc(c.type)} printed on the black panel<code>${esc(c.payload)}</code>`).join("")}</div>` : "";
-    state.ready = d.front.verified !== false;
+    state.ready = true;   // a barcode that failed the check is flagged above, but printing stays possible
     $("stepFront").classList.remove("done"); $("stepBack").classList.remove("done");
     log((state.photo ? "Card ready." : "Card ready (no photo yet).") + (d.notes.length ? " " + d.notes.join(" ") : ""));
   } catch (e) { log(e.message, true); }
@@ -386,25 +386,26 @@ async function render() {
 }
 
 // --- printing ---
-let printerReady = false;
+let sending = false;
 function refreshButtons() {
-  $("printFront").disabled = !(state.ready && printerReady);
-  $("printBack").disabled = !(state.ready && printerReady);
+  // Only a built card is needed. The printer's status never blocks printing: whoever is at the
+  // printer checks it is on and loaded, and a printer that can't be reached reports an error.
+  $("printFront").disabled = $("printBack").disabled = !state.ready || sending;
 }
 async function printSide(side) {
-  $("printFront").disabled = $("printBack").disabled = true;
+  sending = true; refreshButtons();
   log(`Saving and sending ${side}…`);
   try {
     await saveCard(true);
     const d = await api("/api/print", { side, card_id: state.cardId });
-    printerReady = false;
-    if (d.queued) return watchJob(d.queued, side);   // server mode: the print station picks it up
+    if (d.queued) { sending = false; refreshButtons(); return watchJob(d.queued, side); }   // server mode: the print station picks it up
     $(side === "front" ? "stepFront" : "stepBack").classList.add("done");
     log(side === "front"
       ? `Front sent (job ${d.job}). When it comes out, put it back in printed side down and press Print back.`
       : `Back sent (job ${d.job}). The card is complete when it comes out.`);
     setTimeout(pollStatus, 3000);
-  } catch (e) { log(e.message, true); refreshButtons(); }
+  } catch (e) { log(e.message, true); }
+  sending = false; refreshButtons();
 }
 async function watchJob(id, side) {
   const label = side === "front" ? "Front" : "Back";
@@ -433,8 +434,6 @@ async function pollStatus() {
   try {
     const s = lastStatus = await api("/api/status");
     lastStatus.checked = new Date();
-    // Printing is allowed whenever a printer is chosen and installed; the person at the printer checks it is on.
-    printerReady = !!s.can_print;
     const cls = !s.can_print ? "off" : s.status === "Ready" && !s.message ? "ready" : "busy";
     const ribbon = s.ribbon ? ` · ribbon ${s.ribbon}%` : "";
     $("status").innerHTML = `<span class="dot ${cls}"></span><span>${esc(s.model || "Printer")} ${esc(s.status)}${ribbon}${s.message ? " · " + esc(s.message) : ""}</span>`;
