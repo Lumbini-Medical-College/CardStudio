@@ -1,0 +1,4 @@
+# Windows and Linux (macOS uses its built-in Vision tools instead)
+zxing-cpp>=2.2        # barcode check after building a card
+onnxruntime>=1.17     # photo background removal (model downloaded by run.py --setup)
+numpy>=1.24

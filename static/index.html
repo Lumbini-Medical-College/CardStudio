@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LMC Card Studio</title>
+<style>
+  :root {
+    --bg: #f6f4f2; --panel: #ffffff; --ink: #1f1d1b; --muted: #6d6863; --line: #e3dfdb;
+    --brand: #9b2226; --brand-ink: #ffffff; --ok: #2d6a4f; --ok-bg: #e3f1e9; --bad: #9b2226; --bad-bg: #f8e4e4;
+    --warn: #8a5a00; --warn-bg: #fbf0d9; --field: #fbfaf9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161514; --panel: #1f1e1c; --ink: #f1eeea; --muted: #a39d97; --line: #34312e;
+      --brand: #c4373c; --ok: #7fd1a6; --ok-bg: #1d3328; --bad: #f19a9c; --bad-bg: #3a1f20;
+      --warn: #f1c46b; --warn-bg: #3a2f17; --field: #262422;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+           padding: 12px 24px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap;
+           position: sticky; top: 0; z-index: 2; }
+  h1 { font-size: 17px; margin: 0; } h1 span { color: var(--brand); }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 999px;
+          font-size: 13px; background: var(--field); border: 1px solid var(--line); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.ready { background: #2d9d64; } .dot.busy { background: #d99a1b; } .dot.off { background: #c4373c; }
+  main { display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 20px; padding: 20px 24px;
+         max-width: 1320px; margin: 0 auto; align-items: start; }
+  @media (max-width: 960px) { main { grid-template-columns: 1fr; padding: 16px; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .stack { display: grid; gap: 16px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 6px; }
+  label { display: block; font-size: 12.5px; color: var(--muted); margin: 9px 0 3px; }
+  input[type=text], textarea { width: 100%; padding: 7px 10px; border: 1px solid var(--line);
+       border-radius: 8px; background: var(--field); color: var(--ink); font: inherit; }
+  input:focus, textarea:focus { outline: 2px solid color-mix(in srgb, var(--brand) 40%, transparent); border-color: var(--brand); }
+  textarea { min-height: 46px; resize: vertical; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+  .drop { margin-top: 6px; border: 1.5px dashed var(--line); border-radius: 10px; padding: 12px; text-align: center;
+          color: var(--muted); font-size: 13px; cursor: pointer; background: var(--field); display: flex;
+          align-items: center; justify-content: center; gap: 10px; min-height: 56px; }
+  .drop.has { border-style: solid; color: var(--ink); justify-content: flex-start; }
+  .drop img { height: 44px; border-radius: 6px; background: repeating-conic-gradient(#ddd 0 25%, #fff 0 50%) 0 0/10px 10px; }
+  .drop input { display: none; }
+  .row { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+  .row span { width: 64px; } .row input[type=range] { flex: 1; accent-color: var(--brand); }
+  .row output { width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
+  .link { background: none; border: 0; color: var(--brand); padding: 0; cursor: pointer; font: inherit; font-size: 12.5px; }
+  button { font: inherit; border: 0; border-radius: 9px; padding: 10px 16px; cursor: pointer; }
+  .primary { background: var(--brand); color: var(--brand-ink); font-weight: 600; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 640px) { .cards { grid-template-columns: 1fr; } }
+  .cardbox { display: grid; gap: 10px; align-content: start; }
+  .cardbox h3 { margin: 0; font-size: 13px; color: var(--muted); font-weight: 500; text-align: center; }
+  .preview { aspect-ratio: 638 / 1011; width: 100%; max-width: 330px; margin: 0 auto; border-radius: 14px;
+             background: var(--field); border: 1px solid var(--line); overflow: hidden; display: grid; place-items: center;
+             color: var(--muted); font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.08); position: relative; }
+  .preview img { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity .2s; }
+  .preview.loading img { opacity: .55; }
+  .badge { font-size: 12.5px; padding: 8px 10px; border-radius: 8px; }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); } .badge.bad { background: var(--bad-bg); color: var(--bad); }
+  .badge.warn { background: var(--warn-bg); color: var(--warn); }
+  .badge code { white-space: pre-wrap; font-size: 11.5px; display: block; margin-top: 4px; }
+  .steps { display: grid; gap: 10px; margin-top: 16px; }
+  .step { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px;
+          border: 1px solid var(--line); border-radius: 10px; background: var(--field); flex-wrap: wrap; }
+  .step b { font-weight: 600; } .step small { display: block; color: var(--muted); }
+  .step button { min-width: 130px; }
+  .step.done { border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+  #log { margin-top: 10px; font-size: 13px; color: var(--muted); min-height: 1.4em; }
+  .search { position: relative; flex: 1; max-width: 520px; min-width: 220px; }
+  .search input { width: 100%; padding: 8px 12px 8px 34px; border: 1px solid var(--line); border-radius: 999px;
+                  background: var(--field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23888' stroke-width='2'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='M11 11l4 4'/%3E%3C/svg%3E") no-repeat 12px center;
+                  color: var(--ink); font: inherit; }
+  .results { position: absolute; top: calc(100% + 6px); left: 0; right: 0; background: var(--panel); border: 1px solid var(--line);
+             border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.18); max-height: 60vh; overflow: auto; z-index: 5; }
+  .result { display: flex; justify-content: space-between; gap: 12px; padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--line); }
+  .result:last-child { border-bottom: 0; }
+  .result:hover, .result.active { background: var(--field); }
+  .result b { display: block; } .result small { color: var(--muted); }
+  .result .meta { text-align: right; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .empty { padding: 14px; color: var(--muted); font-size: 13px; }
+  .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar .btns { display: flex; gap: 8px; }
+  .ghost { background: var(--field); color: var(--ink); border: 1px solid var(--line); padding: 7px 14px; }
+  #cardState { font-size: 12.5px; color: var(--muted); }
+  .who { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+  .err { color: var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>LMC</span> Card Studio</h1>
+  <div class="search">
+    <input type="search" id="search" placeholder="Search by ID, name, designation, phone, NID…" autocomplete="off"
+           aria-label="Search saved cards" role="combobox" aria-controls="results" aria-expanded="false">
+    <div class="results" id="results" role="listbox" hidden></div>
+  </div>
+  <div class="pill" id="status"><span class="dot"></span><span>Checking printer…</span></div>
+  <div class="who" id="who" hidden><span id="whoName"></span><button class="link" id="signOut" type="button">Sign out</button></div>
+</header>
+
+<main>
+  <div class="stack">
+    <section>
+      <h2>Photo &amp; signature</h2>
+      <div class="drop" id="dropPhoto"><span>Drop or click to add the employee photo<br><small>Background is removed automatically</small></span><input type="file" accept="image/*" id="filePhoto"></div>
+      <div id="photoAdjust" hidden>
+        <div class="row"><span>Size</span><input type="range" id="photo_scale" min="0.6" max="1.4" step="0.02" value="1"><output id="o_scale">100%</output></div>
+        <div class="row"><span>Left/right</span><input type="range" id="photo_dx" min="-120" max="120" step="2" value="0"><output id="o_dx">0</output></div>
+        <div class="row"><span>Up/down</span><input type="range" id="photo_dy" min="-150" max="150" step="2" value="0"><output id="o_dy">0</output></div>
+        <div class="row"><button class="link" id="resetPhoto" type="button">Reset position</button></div>
+      </div>
+      <label>Cardholder signature (optional)</label>
+      <div class="drop" id="dropSign"><span>Drop or click to add a signature image</span><input type="file" accept="image/*" id="fileSign"></div>
+      <div class="row" id="signClear" hidden><button class="link" type="button" id="clearSign">Remove signature</button></div>
+    </section>
+
+    <section>
+      <h2>Front</h2>
+      <div class="drop" id="dropBarcode" style="min-height:40px;padding:8px"><span>Optional: drop an existing barcode PNG to fill ID, name and designation</span><input type="file" accept="image/*" id="fileBarcode"></div>
+      <label for="employee_id">Employee ID / ID Card No</label>
+      <input type="text" id="employee_id" placeholder="LMC_025_01000">
+      <label for="name">Full name (with title)</label>
+      <input type="text" id="name" placeholder="Dr. Balvadra Adhikari">
+      <label for="designation">Designation</label>
+      <input type="text" id="designation" placeholder="Managing Director">
+      <label for="valid_from">Valid from</label>
+      <input type="text" id="valid_from" placeholder="Dec, 2025">
+      <details>
+        <summary>Extra barcode lines</summary>
+        <label for="extra_lines">One per line. The barcode shrinks to fit, so keep these short.</label>
+        <textarea id="extra_lines"></textarea>
+      </details>
+    </section>
+
+    <section>
+      <h2>Back</h2>
+      <div class="two">
+        <div><label for="dob">Date of Birth</label><input type="text" id="dob" placeholder="2039/04/01"></div>
+        <div><label for="blood_group">Blood Group</label><input type="text" id="blood_group" placeholder="A+ve"></div>
+      </div>
+      <label for="fh_name">F/H Name</label><input type="text" id="fh_name" placeholder="Late Durga Prasad Adhikari">
+      <div class="two">
+        <div><label for="citizenship_no">Citizenship No</label><input type="text" id="citizenship_no" placeholder="26753-Rolpa"></div>
+        <div><label for="nid_no">NID No</label><input type="text" id="nid_no" placeholder="700-665-184-6"></div>
+      </div>
+      <label for="address">Permanent Address</label><input type="text" id="address" placeholder="Budhanilkantha, Kathmandu">
+      <div class="two">
+        <div><label for="contact">Contact Number</label><input type="text" id="contact" placeholder="982 000 0000"></div>
+        <div><label for="contact2">2nd Contact</label><input type="text" id="contact2" placeholder="9801 000 003"></div>
+      </div>
+    </section>
+  </div>
+
+  <section style="position:sticky;top:70px">
+    <div class="toolbar">
+      <div><h2 style="margin:0">Preview</h2><div id="cardState">New card · not saved</div></div>
+      <div class="btns">
+        <button class="ghost" id="newCard" type="button">New card</button>
+        <button class="ghost" id="saveCard" type="button">Save</button>
+      </div>
+    </div>
+    <div class="cards">
+      <div class="cardbox"><h3>Front</h3><div class="preview" id="pvFront">Add a photo and details</div><div id="infoFront"></div></div>
+      <div class="cardbox"><h3>Back</h3><div class="preview" id="pvBack">Back side</div><div id="infoBack"></div></div>
+    </div>
+    <div class="steps">
+      <div class="step" id="stepFront">
+        <div><b>1. Print front</b><small>Load a blank card in the hopper.</small></div>
+        <button class="primary" id="printFront" disabled>Print front</button>
+      </div>
+      <div class="step" id="stepBack">
+        <div><b>2. Print back</b><small>Put the same card back in, printed side down, top edge at the same end.</small></div>
+        <button class="primary" id="printBack" disabled>Print back</button>
+      </div>
+    </div>
+    <div id="log"></div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const FIELDS = ["employee_id", "name", "designation", "valid_from", "extra_lines", "dob", "blood_group",
+                "fh_name", "citizenship_no", "nid_no", "address", "contact", "contact2"];
+const state = { photo: null, signature: null, ready: false };
+
+function log(msg, isErr) { $("log").innerHTML = isErr ? `<span class="err">${esc(msg)}</span>` : esc(msg); }
+function readFile(file) {
+  return new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(file); });
+}
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  if (r.status === 401 && path !== "/api/login") { location.href = "/login"; throw new Error("Please sign in."); }
+  const data = await r.json();
+  if (!r.ok || data.error) throw new Error(data.error || r.statusText);
+  return data;
+}
+function wireDrop(dropId, inputId, onFile) {
+  const drop = $(dropId), input = $(inputId);
+  drop.addEventListener("click", () => input.click());
+  drop.addEventListener("dragover", e => e.preventDefault());
+  drop.addEventListener("drop", e => { e.preventDefault(); e.dataTransfer.files[0] && onFile(e.dataTransfer.files[0]); });
+  input.addEventListener("change", () => { input.files[0] && onFile(input.files[0]); input.value = ""; });
+}
+function showFile(dropId, url, name) {
+  const d = $(dropId); d.classList.add("has");
+  d.querySelector("span").innerHTML = `<img src="${url}" alt=""> ${esc(name)} <small>(click to change)</small>`;
+  d.querySelector("span").style.display = "flex"; d.querySelector("span").style.alignItems = "center"; d.querySelector("span").style.gap = "10px";
+}
+
+// --- inputs ---
+wireDrop("dropPhoto", "filePhoto", async f => {
+  state.photo = await readFile(f); showFile("dropPhoto", state.photo, f.name);
+  $("photoAdjust").hidden = false; log("Removing photo background…"); render();
+});
+wireDrop("dropSign", "fileSign", async f => {
+  state.signature = await readFile(f); showFile("dropSign", state.signature, f.name); $("signClear").hidden = false; render();
+});
+$("clearSign").addEventListener("click", () => {
+  state.signature = null; $("signClear").hidden = true; $("dropSign").classList.remove("has");
+  $("dropSign").querySelector("span").textContent = "Drop or click to add a signature image"; render();
+});
+wireDrop("dropBarcode", "fileBarcode", async f => {
+  try {
+    const d = await api("/api/decode", { image: await readFile(f) });
+    for (const k of ["employee_id", "name", "designation"]) if (d[k]) $(k).value = d[k];
+    $("extra_lines").value = (d.extra_lines || []).join("\n");
+    $("dropBarcode").querySelector("span").textContent = `Filled from ${f.name}`;
+    render();
+  } catch (e) { log(e.message, true); }
+});
+for (const id of ["photo_scale", "photo_dx", "photo_dy"]) {
+  $(id).addEventListener("input", () => { updateOutputs(); renderSoon(); });
+}
+function updateOutputs() {
+  $("o_scale").textContent = Math.round($("photo_scale").value * 100) + "%";
+  $("o_dx").textContent = $("photo_dx").value; $("o_dy").textContent = $("photo_dy").value;
+}
+$("resetPhoto").addEventListener("click", () => {
+  $("photo_scale").value = 1; $("photo_dx").value = 0; $("photo_dy").value = 0; updateOutputs(); render();
+});
+for (const id of FIELDS) $(id).addEventListener("input", renderSoon);
+
+// --- rendering ---
+let timer = null, rendering = false, again = false;
+function renderSoon() { clearTimeout(timer); timer = setTimeout(render, 500); }
+function collect() {
+  const f = {};
+  for (const id of FIELDS) f[id] = id === "extra_lines" ? $(id).value.split("\n") : $(id).value;
+  f.photo_scale = +$("photo_scale").value; f.photo_dx = +$("photo_dx").value; f.photo_dy = +$("photo_dy").value;
+  return f;
+}
+async function render() {
+  if (rendering) { again = true; return; }
+  if (!$("employee_id").value.trim()) { state.ready = false; refreshButtons(); return log("Enter the Employee ID to build the card."); }
+  rendering = true; state.ready = false; refreshButtons();
+  $("pvFront").classList.add("loading"); $("pvBack").classList.add("loading");
+  try {
+    const d = await api("/api/render", { fields: collect(), photo: state.photo, signature: state.signature });
+    $("pvFront").innerHTML = `<img src="${d.front.preview}" alt="Front of card">`;
+    $("pvBack").innerHTML = `<img src="${d.back.preview}" alt="Back of card">`;
+    const sized = `${d.front.size_mm[0]} × ${d.front.size_mm[1]} mm, bars ${d.front.module_mm} mm`;
+    $("infoFront").innerHTML = d.front.verified === true
+      ? `<div class="badge ok">Barcode verified after print simulation · ${sized}<code>${esc(d.front.decoded)}</code></div>`
+      : d.front.verified === null
+      ? `<div class="badge warn">Barcode sized for scanning (${sized}) but not double-checked: no barcode reader installed. Run: python run.py --setup</div>`
+      : `<div class="badge bad">Barcode did not decode in the print simulation. Shorten the extra lines.</div>`;
+    $("infoBack").innerHTML = d.back.codes.length
+      ? `<div class="badge ok">${d.back.codes.map(c => `${esc(c.type)} printed on the black panel<code>${esc(c.payload)}</code>`).join("")}</div>` : "";
+    state.ready = d.front.verified !== false;
+    $("stepFront").classList.remove("done"); $("stepBack").classList.remove("done");
+    log((state.photo ? "Card ready." : "Card ready (no photo yet).") + (d.notes.length ? " " + d.notes.join(" ") : ""));
+  } catch (e) { log(e.message, true); }
+  $("pvFront").classList.remove("loading"); $("pvBack").classList.remove("loading");
+  rendering = false; refreshButtons();
+  if (again) { again = false; render(); }
+}
+
+// --- printing ---
+let printerReady = false;
+function refreshButtons() {
+  $("printFront").disabled = !(state.ready && printerReady);
+  $("printBack").disabled = !(state.ready && printerReady);
+}
+async function printSide(side) {
+  $("printFront").disabled = $("printBack").disabled = true;
+  log(`Saving and sending ${side}…`);
+  try {
+    await saveCard(true);
+    const d = await api("/api/print", { side, card_id: state.cardId });
+    printerReady = false;
+    if (d.queued) return watchJob(d.queued, side);   // server mode: the print station picks it up
+    $(side === "front" ? "stepFront" : "stepBack").classList.add("done");
+    log(side === "front"
+      ? `Front sent (job ${d.job}). When it comes out, put it back in printed side down and press Print back.`
+      : `Back sent (job ${d.job}). The card is complete when it comes out.`);
+    setTimeout(pollStatus, 3000);
+  } catch (e) { log(e.message, true); refreshButtons(); }
+}
+async function watchJob(id, side) {
+  const label = side === "front" ? "Front" : "Back";
+  const text = { queued: "waiting for the print station", sent: "sent to the print station", printing: "printing" };
+  for (;;) {
+    let j;
+    try { j = await api(`/api/jobs/${id}`); } catch (e) { log(e.message, true); return; }
+    if (j.status === "done") {
+      $(side === "front" ? "stepFront" : "stepBack").classList.add("done");
+      log(side === "front"
+        ? "Front printed. Put the card back in printed side down and press Print back."
+        : "Back printed. The card is complete.");
+      return pollStatus();
+    }
+    if (j.status === "failed" || j.status === "cancelled") { log(`${label} failed: ${j.error || j.status}`, true); return pollStatus(); }
+    log(`${label}: ${text[j.status] || j.status}…`);
+    await new Promise(r => setTimeout(r, 2000));
+  }
+}
+$("printFront").addEventListener("click", () => printSide("front"));
+$("printBack").addEventListener("click", () => printSide("back"));
+
+let polling = false;
+async function pollStatus() {
+  if (polling) return; polling = true;
+  try {
+    const s = await api("/api/status");
+    const busy = s.status === "Busy" || s.queue.length;
+    printerReady = s.link && s.status === "Ready" && !s.queue.length;
+    const cls = printerReady ? "ready" : busy ? "busy" : "off";
+    const ribbon = s.ribbon ? ` · ribbon ${s.ribbon}%` : "";
+    $("status").innerHTML = `<span class="dot ${cls}"></span><span>${esc(s.model || "SD160")} ${esc(s.status)}${ribbon}${s.message ? " · " + esc(s.message) : ""}</span>`;
+  } catch (e) {
+    $("status").innerHTML = `<span class="dot off"></span><span>Status unavailable</span>`;
+  }
+  polling = false; refreshButtons();
+  setTimeout(pollStatus, printerReady ? 10000 : 4000);
+}
+
+// signed-in user (server mode)
+api("/api/me").then(me => {
+  if (me.mode !== "server") return;
+  $("who").hidden = false; $("whoName").textContent = me.user;
+}).catch(() => {});
+$("signOut").addEventListener("click", async () => { await api("/api/logout", {}).catch(() => {}); location.href = "/login"; });
+// --- saved cards (SQLite) ---
+function setCardState(text) { $("cardState").textContent = text; }
+function markDirty() { if (state.cardId) setCardState(`${$("employee_id").value} · unsaved changes`); }
+for (const id of [...FIELDS, "photo_scale", "photo_dx", "photo_dy"]) $(id).addEventListener("input", markDirty);
+
+async function saveCard(quiet) {
+  const d = await api("/api/cards", { fields: collect(), photo: state.photo, signature: state.signature });
+  state.cardId = d.id;
+  setCardState(`${$("employee_id").value} · saved`);
+  if (!quiet) log("Saved.");
+}
+$("saveCard").addEventListener("click", () => saveCard().catch(e => log(e.message, true)));
+
+function resetDrop(id, text) {
+  $(id).classList.remove("has"); const s = $(id).querySelector("span"); s.removeAttribute("style"); s.innerHTML = text;
+}
+function clearForm() {
+  for (const id of FIELDS) $(id).value = "";
+  $("photo_scale").value = 1; $("photo_dx").value = 0; $("photo_dy").value = 0; updateOutputs();
+  state.photo = state.signature = null; state.cardId = null; state.ready = false;
+  resetDrop("dropPhoto", "Drop or click to add the employee photo<br><small>Background is removed automatically</small>");
+  resetDrop("dropSign", "Drop or click to add a signature image");
+  $("photoAdjust").hidden = true; $("signClear").hidden = true;
+  $("pvFront").textContent = "Add a photo and details"; $("pvBack").textContent = "Back side";
+  $("infoFront").innerHTML = $("infoBack").innerHTML = "";
+  setCardState("New card · not saved"); refreshButtons();
+}
+$("newCard").addEventListener("click", () => { clearForm(); log("Enter the Employee ID to build the card."); });
+
+async function loadCard(id) {
+  closeResults();
+  try {
+    const c = await api(`/api/cards/${id}`);
+    clearForm();
+    for (const k of FIELDS) $(k).value = k === "extra_lines" ? (c.extra_lines || []).join("\n") : (c[k] || "");
+    $("photo_scale").value = c.photo_scale; $("photo_dx").value = c.photo_dx; $("photo_dy").value = c.photo_dy; updateOutputs();
+    if (c.photo) { state.photo = c.photo; showFile("dropPhoto", c.photo, "Saved photo"); $("photoAdjust").hidden = false; }
+    if (c.signature) { state.signature = c.signature; showFile("dropSign", c.signature, "Saved signature"); $("signClear").hidden = false; }
+    state.cardId = c.id;
+    const fronts = c.history.filter(h => h.side === "front");
+    setCardState(`${c.employee_id} · saved` + (fronts.length
+      ? ` · printed ${fronts.length}× · last ${c.history[0].printed_at}` : " · never printed"));
+    $("search").value = "";
+    await render();
+  } catch (e) { log(e.message, true); }
+}
+
+// search bar
+let searchTimer = null, results = [], active = -1;
+function closeResults() { $("results").hidden = true; $("search").setAttribute("aria-expanded", "false"); active = -1; }
+function showResults() {
+  const box = $("results");
+  box.innerHTML = results.length ? results.map((r, i) => `
+    <div class="result${i === active ? " active" : ""}" role="option" data-id="${r.id}">
+      <div><b>${esc(r.name || "(no name)")}</b><small>${esc(r.employee_id)} · ${esc(r.designation)}</small></div>
+      <div class="meta">${r.times_printed ? `printed ${r.times_printed}×<br>${esc(r.last_printed)}` : "not printed yet"}</div>
+    </div>`).join("") : `<div class="empty">No saved cards match.</div>`;
+  box.hidden = false; $("search").setAttribute("aria-expanded", "true");
+  box.querySelectorAll(".result").forEach(el => el.addEventListener("mousedown", e => { e.preventDefault(); loadCard(el.dataset.id); }));
+}
+async function runSearch() {
+  try { results = await api(`/api/cards?q=${encodeURIComponent($("search").value)}`); active = -1; showResults(); }
+  catch (e) { log(e.message, true); }
+}
+$("search").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 200); });
+$("search").addEventListener("focus", runSearch);
+$("search").addEventListener("blur", () => setTimeout(closeResults, 150));
+$("search").addEventListener("keydown", e => {
+  if ($("results").hidden) return;
+  if (e.key === "ArrowDown") { active = Math.min(active + 1, results.length - 1); showResults(); e.preventDefault(); }
+  else if (e.key === "ArrowUp") { active = Math.max(active - 1, 0); showResults(); e.preventDefault(); }
+  else if (e.key === "Enter" && results.length) { loadCard(results[Math.max(active, 0)].id); e.preventDefault(); }
+  else if (e.key === "Escape") { closeResults(); $("search").blur(); }
+});
+
+updateOutputs(); pollStatus(); log("Enter the Employee ID to build the card.");
+</script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+# Windows only: printing through the Entrust XPS Card Printer Driver
+pywin32>=306
