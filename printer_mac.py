@@ -93,7 +93,8 @@ def status():
         result["message"] = "Printer not responding. Make sure it is on, then unplug and replug its USB cable."
         return result
     try:
-        out = dexec(STATUS_TOOL).stdout
+        r = dexec(STATUS_TOOL)
+        out = r.stdout + r.stderr   # the SDK sample logs its XML to stderr
     except subprocess.TimeoutExpired:
         result["message"] = "Status request timed out."
         return result
