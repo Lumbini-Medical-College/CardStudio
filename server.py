@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import io
 import json
+import os
 import secrets
 import ssl
 import threading
@@ -28,7 +29,9 @@ from PIL import Image
 
 import card
 import db
+import updater
 from paths import DATA, RES, WORK
+from version import VERSION
 
 PORT = 8765
 MAX_BODY = 40 * 1024 * 1024
@@ -172,6 +175,31 @@ def printer_status():
     return s
 
 
+def printers():
+    """Installed printers for the printer menu (local mode; empty on the Mac)."""
+    import printer
+    return {"printers": printer.list_printers(), "selected": os.environ.get("CARD_PRINTER", "")}
+
+
+def choose_printer(name):
+    """Use this printer from now on ("" = first Entrust printer found). Kept in data/settings.json."""
+    name = str(name or "")
+    if name and name not in printers()["printers"]:
+        raise ValueError(f"Printer \"{name}\" isn't installed.")
+    path = DATA / "settings.json"
+    try:
+        settings = json.loads(path.read_text())
+    except (OSError, ValueError):
+        settings = {}
+    settings["printer"] = name
+    path.write_text(json.dumps(settings, indent=2))
+    if name:
+        os.environ["CARD_PRINTER"] = name
+    else:
+        os.environ.pop("CARD_PRINTER", None)
+    return printers()
+
+
 def print_side(body, owner, user):
     side = body.get("side")
     job = built.get(owner, {}).get(side)
@@ -266,9 +294,17 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             return self.page("index.html")
         if path == "/api/me":
-            return self.send_json({"user": user, "mode": MODE})
+            return self.send_json({"user": user, "mode": MODE, "version": VERSION})
         if path == "/api/status":
             return self.send_json(printer_status())
+        if path == "/api/printers":
+            return self.send_json(printers() if MODE == "local" else {"printers": [], "selected": ""})
+        if path == "/api/update":
+            if MODE != "local":
+                return self.send_json({"current": VERSION, "available": False})
+            return self.send_json(updater.check(force="force" in parse_qs(url.query)))
+        if path == "/api/update/progress":
+            return self.send_json(updater.progress)
         if path == "/api/cards":
             return self.send_json(db.search(parse_qs(url.query).get("q", [""])[0]))
         if path.startswith("/api/cards/"):
@@ -311,6 +347,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json({"id": save_card(body)})
             if path == "/api/decode":
                 return self.send_json(decode_barcode(body))
+            if path == "/api/printer":
+                if MODE != "local":
+                    raise ValueError("Choose the printer on the print station (agent.py --printer).")
+                return self.send_json(choose_printer(body.get("name")))
+            if path == "/api/update":
+                if MODE != "local":
+                    raise ValueError("Update the server with git pull.")
+                return self.send_json(updater.start_install())
             if path == "/api/print":
                 with lock:
                     return self.send_json(print_side(body, owner, user))

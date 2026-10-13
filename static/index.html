@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LMC Card Studio</title>
+<script>/* apply the saved theme before first paint */
+try { const t = localStorage.getItem("cs-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
 <style>
   :root {
     --bg: #f6f4f2; --panel: #ffffff; --ink: #1f1d1b; --muted: #6d6863; --line: #e3dfdb;
@@ -17,6 +20,13 @@
       --warn: #f1c46b; --warn-bg: #3a2f17; --field: #262422;
     }
   }
+  :root[data-theme="dark"] {
+      --bg: #161514; --panel: #1f1e1c; --ink: #f1eeea; --muted: #a39d97; --line: #34312e;
+      --brand: #c4373c; --ok: #7fd1a6; --ok-bg: #1d3328; --bad: #f19a9c; --bad-bg: #3a1f20;
+      --warn: #f1c46b; --warn-bg: #3a2f17; --field: #262422;
+  }
+  :root { color-scheme: light; } :root[data-theme="dark"] { color-scheme: dark; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; } }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--ink);
@@ -27,6 +37,32 @@
   h1 { font-size: 17px; margin: 0; } h1 span { color: var(--brand); }
   .pill { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 999px;
           font-size: 13px; background: var(--field); border: 1px solid var(--line); }
+  button.pill { color: var(--ink); padding: 5px 12px; border-radius: 999px; max-width: 420px; text-align: left; }
+  button.pill span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tools { display: flex; align-items: center; gap: 8px; position: relative; }
+  .iconbtn { width: 32px; height: 32px; padding: 0; border-radius: 50%; display: inline-grid; place-items: center;
+             background: var(--field); border: 1px solid var(--line); color: var(--ink); flex: none; }
+  .iconbtn:hover, button.pill:hover { border-color: var(--muted); }
+  .iconbtn svg { width: 16px; height: 16px; }
+  .iconbtn.spin svg { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .iconbtn.spin svg { animation: none; } }
+  .menu { position: absolute; top: calc(100% + 8px); right: 0; width: min(340px, calc(100vw - 32px)); background: var(--panel);
+          border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.18); padding: 14px 16px; z-index: 6; }
+  .menu select { width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--field);
+                 color: var(--ink); font: inherit; }
+  .menu dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
+  .menu dt { color: var(--muted); } .menu dd { margin: 0; overflow-wrap: anywhere; }
+  .menu .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; gap: 10px; }
+  .menu .foot small { color: var(--muted); }
+  .ver { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+            max-width: 1320px; margin: 16px auto 0; padding: 10px 14px; border-radius: 10px;
+            background: var(--warn-bg); color: var(--warn); font-size: 13.5px; width: calc(100% - 48px); }
+  .banner .btns { display: flex; align-items: center; gap: 12px; }
+  .banner a { color: inherit; }
+  .banner .primary { padding: 7px 14px; }
+  @media (max-width: 960px) { .banner { width: calc(100% - 32px); } }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
   .dot.ready { background: #2d9d64; } .dot.busy { background: #d99a1b; } .dot.off { background: #c4373c; }
   main { display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 20px; padding: 20px 24px;
@@ -97,15 +133,38 @@
 </head>
 <body>
 <header>
-  <h1><span>LMC</span> Card Studio</h1>
+  <h1><span>LMC</span> Card Studio<span class="ver" id="ver"></span></h1>
   <div class="search">
     <input type="search" id="search" placeholder="Search by ID, name, designation, phone, NID…" autocomplete="off"
            aria-label="Search saved cards" role="combobox" aria-controls="results" aria-expanded="false">
     <div class="results" id="results" role="listbox" hidden></div>
   </div>
-  <div class="pill" id="status"><span class="dot"></span><span>Checking printer…</span></div>
+  <div class="tools">
+    <button class="pill" id="status" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="printerMenu"
+            title="Printer details"><span class="dot"></span><span>Checking printer…</span></button>
+    <button class="iconbtn" id="refreshPrinter" type="button" title="Refresh printer" aria-label="Refresh printer"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg></button>
+    <button class="iconbtn" id="themeBtn" type="button"></button>
+    <div class="menu" id="printerMenu" role="dialog" aria-label="Printer" hidden>
+      <h2>Printer</h2>
+      <dl id="pmStatus"></dl>
+      <div id="pmPick" hidden>
+        <label for="printerSel">Print with</label>
+        <select id="printerSel"></select>
+      </div>
+      <div class="foot"><small id="pmChecked"></small><button class="ghost" id="pmRefresh" type="button">Refresh</button></div>
+    </div>
+  </div>
   <div class="who" id="who" hidden><span id="whoName"></span><button class="link" id="signOut" type="button">Sign out</button></div>
 </header>
+
+<div class="banner" id="updateBar" role="status" hidden>
+  <span id="updateText"></span>
+  <span class="btns">
+    <a id="updateNotes" target="_blank" rel="noopener">What's new</a>
+    <button class="link" id="updateLater" type="button">Later</button>
+    <button class="primary" id="updateBtn" type="button">Update and restart</button>
+  </span>
+</div>
 
 <main>
   <div class="stack">
@@ -327,11 +386,12 @@ async function watchJob(id, side) {
 $("printFront").addEventListener("click", () => printSide("front"));
 $("printBack").addEventListener("click", () => printSide("back"));
 
-let polling = false;
+let polling = false, statusTimer = null, lastStatus = null;
 async function pollStatus() {
-  if (polling) return; polling = true;
+  if (polling) return; polling = true; clearTimeout(statusTimer);
   try {
-    const s = await api("/api/status");
+    const s = lastStatus = await api("/api/status");
+    lastStatus.checked = new Date();
     const busy = s.status === "Busy" || s.queue.length;
     printerReady = s.link && s.status === "Ready" && !s.queue.length;
     const cls = printerReady ? "ready" : busy ? "busy" : "off";
@@ -339,14 +399,114 @@ async function pollStatus() {
     $("status").innerHTML = `<span class="dot ${cls}"></span><span>${esc(s.model || "SD160")} ${esc(s.status)}${ribbon}${s.message ? " · " + esc(s.message) : ""}</span>`;
   } catch (e) {
     $("status").innerHTML = `<span class="dot off"></span><span>Status unavailable</span>`;
+    lastStatus = { status: "Unavailable", message: e.message, queue: [], checked: new Date() };
   }
-  polling = false; refreshButtons();
-  setTimeout(pollStatus, printerReady ? 10000 : 4000);
+  polling = false; refreshButtons(); showPrinterMenu();
+  statusTimer = setTimeout(pollStatus, printerReady ? 10000 : 4000);
 }
+
+// printer menu: details, which printer to use, refresh now
+async function loadPrinters() {
+  try {
+    const p = await api("/api/printers");
+    $("pmPick").hidden = !p.printers.length;
+    const opt = (value, text, sel) => `<option value="${esc(value)}"${sel ? " selected" : ""}>${esc(text)}</option>`;
+    const opts = [opt("", "Automatic (first Entrust / SD160 printer)", !p.selected),
+                  ...p.printers.map(n => opt(n, n, n === p.selected))];
+    if (p.selected && !p.printers.includes(p.selected)) opts.push(opt(p.selected, `${p.selected} (not found)`, true));
+    $("printerSel").innerHTML = opts.join("");
+  } catch (e) { /* server mode or not signed in: menu shows status only */ }
+}
+function showPrinterMenu() {
+  const s = lastStatus;
+  if (!s) return;
+  const rows = [["Printer", s.model || "Not found"], ["Status", s.status], ["Ribbon", s.ribbon ? s.ribbon + "%" : null],
+                ["Serial", s.serial], ["In queue", s.queue && s.queue.length ? s.queue.length + " job(s)" : null], ["Note", s.message]];
+  $("pmStatus").innerHTML = rows.filter(r => r[1]).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("");
+  $("pmChecked").textContent = "Checked " + s.checked.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+let refreshing = false;
+async function refreshPrinter() {
+  if (refreshing) return; refreshing = true;
+  $("refreshPrinter").classList.add("spin"); $("pmRefresh").disabled = true;
+  while (polling) await new Promise(r => setTimeout(r, 200));   // let a running check finish, then check again
+  await Promise.all([loadPrinters(), pollStatus()]);
+  $("refreshPrinter").classList.remove("spin"); $("pmRefresh").disabled = false; refreshing = false;
+}
+function toggleMenu(open) {
+  $("printerMenu").hidden = !open; $("status").setAttribute("aria-expanded", String(open));
+  if (open) { showPrinterMenu(); loadPrinters(); }
+}
+$("status").addEventListener("click", () => toggleMenu($("printerMenu").hidden));
+$("refreshPrinter").addEventListener("click", refreshPrinter);
+$("pmRefresh").addEventListener("click", refreshPrinter);
+$("printerSel").addEventListener("change", async () => {
+  try { await api("/api/printer", { name: $("printerSel").value }); } catch (e) { log(e.message, true); }
+  refreshPrinter();
+});
+document.addEventListener("mousedown", e => {
+  if (!$("printerMenu").hidden && !e.target.closest("#printerMenu, #status")) toggleMenu(false);
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("printerMenu").hidden) { toggleMenu(false); $("status").focus(); } });
+
+// light / dark / follow the computer
+const THEMES = {
+  system: ["Theme: same as computer", '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="9" rx="1.5"/><path d="M5.5 14h5M8 11.5V14"/></svg>'],
+  light: ["Theme: light", '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3 3l1 1M12 12l1 1M3 13l1-1M12 4l1-1"/></svg>'],
+  dark: ["Theme: dark", '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.5 10.2A6 6 0 0 1 5.8 2.5a6 6 0 1 0 7.7 7.7z"/></svg>'],
+};
+let theme = "system";
+try { theme = THEMES[localStorage.getItem("cs-theme")] ? localStorage.getItem("cs-theme") : "system"; } catch (e) {}
+function applyTheme() {
+  if (theme === "system") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+  $("themeBtn").innerHTML = THEMES[theme][1];
+  $("themeBtn").title = THEMES[theme][0] + " (click to change)";
+  $("themeBtn").setAttribute("aria-label", $("themeBtn").title);
+}
+$("themeBtn").addEventListener("click", () => {
+  const order = Object.keys(THEMES);
+  theme = order[(order.indexOf(theme) + 1) % order.length];
+  try { localStorage.setItem("cs-theme", theme); } catch (e) {}
+  applyTheme();
+});
+applyTheme();
+
+// updates (Windows app): offer a newer GitHub release
+let updateSkipped = null, updateOffered = null;
+async function checkUpdate() {
+  try {
+    const u = await api("/api/update");
+    if (!u.available || u.latest === updateSkipped) return;
+    $("updateText").textContent = `Card Studio ${u.latest} is available (you have ${u.current}).` + (u.can_install ? "" : " " + u.reason);
+    updateOffered = u.latest; $("updateNotes").href = u.url;
+    $("updateBtn").hidden = !u.can_install; $("updateBtn").disabled = false;
+    $("updateBar").hidden = false;
+  } catch (e) { /* offline: try again later */ }
+}
+$("updateLater").addEventListener("click", () => {
+  updateSkipped = updateOffered; $("updateBar").hidden = true;
+});
+$("updateBtn").addEventListener("click", async () => {
+  if (!confirm("Card Studio will close, install the update and open again. Save the current card first if you need it. Continue?")) return;
+  $("updateBtn").disabled = true; $("updateLater").hidden = true;
+  try { await api("/api/update", {}); } catch (e) { $("updateText").textContent = e.message; $("updateBtn").disabled = false; return; }
+  for (;;) {
+    let p;
+    try { p = await api("/api/update/progress"); } catch (e) { p = { state: "restarting" }; }   // app already closed
+    if (p.state === "failed") { $("updateText").textContent = "Update failed: " + p.error; $("updateBtn").disabled = false; return; }
+    $("updateText").textContent = p.state === "downloading"
+      ? `Downloading update… ${p.total ? Math.round(p.done / p.total * 100) + "%" : Math.round(p.done / 1048576) + " MB"}`
+      : p.state === "installing" ? "Installing update…" : "Restarting… Card Studio will open again in a moment.";
+    if (p.state === "restarting") return;
+    await new Promise(r => setTimeout(r, 700));
+  }
+});
 
 // signed-in user (server mode)
 api("/api/me").then(me => {
-  if (me.mode !== "server") return;
+  $("ver").textContent = me.version && me.version !== "dev" ? me.version : "";
+  if (me.mode !== "server") { checkUpdate(); setInterval(checkUpdate, 6 * 3600 * 1000); return; }
   $("who").hidden = false; $("whoName").textContent = me.user;
 }).catch(() => {});
 $("signOut").addEventListener("click", async () => { await api("/api/logout", {}).catch(() => {}); location.href = "/login"; });

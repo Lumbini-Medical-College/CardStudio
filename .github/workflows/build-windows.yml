@@ -36,6 +36,11 @@ jobs:
           python run.py --setup
           python -m pip install "pyinstaller>=6.3" "pywebview>=5.0"
 
+      # Release builds know their version, so the app can tell when a newer release is out.
+      - name: Stamp version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: python -c "import sys; open('version.py', 'w').write('VERSION = %r\n' % sys.argv[1])" "${{ github.ref_name }}"
+
       - name: Build CardStudio.exe
         run: python -m PyInstaller --noconfirm --clean CardStudio.spec
 

@@ -82,7 +82,8 @@ def open_window(url):
         webview = None
     if webview:
         webview.create_window(TITLE, url, width=1380, height=920, min_size=(1000, 680))
-        webview.start()          # returns when the window is closed
+        # Not private, so the page remembers the light/dark choice between runs.
+        webview.start(private_mode=False, storage_path=str(DATA / "webview"))   # returns when the window is closed
         return
     # Fallback: Edge in app mode (no browser bars), then the default browser.
     edge = shutil.which("msedge") or next((p for p in (

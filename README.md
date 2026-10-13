@@ -24,6 +24,19 @@ existing cards, put your `cards.db` there before starting. If the printer isn't 
 write its exact name in `data\settings.json`: `{"printer": "XPS Card Printer"}`.
 Problems are logged to `data\cardstudio.log`.
 
+**Printer menu:** click the printer status at the top to see its details and pick which
+installed printer to use (saved in `data\settings.json`). The ↻ button checks the printer
+again right away, e.g. after plugging it in.
+
+**Light / dark:** the button next to it switches between the computer's setting, light and dark.
+
+**Updates:** the app checks GitHub Releases every few hours. When a newer version is out it
+shows a bar at the top; **Update and restart** downloads it, replaces the program files
+(your `data` folder is kept) and reopens the app. To publish a new version, push a tag:
+`git tag v1.2 && git push origin v1.2`; GitHub Actions builds it and attaches the zip to the
+release. Automatic updates need the program folder to be writable (not under Program Files)
+and the GitHub repository to be public.
+
 ## Windows (run from source)
 
 1. Install **Python 3.9+** from python.org (tick "Add python.exe to PATH").
@@ -96,6 +109,7 @@ Every print is saved automatically with its date.
 | `desktop.py` | Desktop app entry point (CardStudio.exe) |
 | `build_windows.bat`, `CardStudio.spec` | Build the Windows desktop app with PyInstaller |
 | `paths.py` | Where app files and your data are kept |
+| `updater.py`, `version.py` | Checks GitHub Releases and installs new versions of the Windows app |
 | `run.py` | Launcher: `--setup`, `--check`, `--server`, `--add-user`, `--port`, `--printer` |
 | `agent.py` | Print agent for the printer PC (server mode) |
 | `server.py` | Local web server and API |

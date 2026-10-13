@@ -78,6 +78,11 @@ def ensure_container():
           f"lpadmin -p {QUEUE} -v lxm-card-printer-backend://{DOCKER_HOST_IP}")
 
 
+def list_printers():
+    """The Mac always prints through the one Docker queue: nothing to choose."""
+    return []
+
+
 def status():
     """Return printer status from the driver: ready/busy, ribbon %, model, serial, message."""
     ensure_relay()

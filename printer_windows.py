@@ -33,13 +33,20 @@ MESSAGES = {"PAPER_JAM": "Card jam", "PAPER_OUT": "Out of cards", "PAPER_PROBLEM
 WORK_OFFLINE = 0x400  # PRINTER_ATTRIBUTE_WORK_OFFLINE
 
 
+def list_printers():
+    """Every printer installed on this PC."""
+    if win32print is None:
+        return []
+    flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+    return sorted(p[2] for p in win32print.EnumPrinters(flags))
+
+
 def find_printer():
-    """The printer named in CARD_PRINTER (run.py --printer or data/settings.json),
+    """The printer named in CARD_PRINTER (run.py --printer or the app's printer menu),
     else the first Entrust/SD160 printer."""
     if os.environ.get("CARD_PRINTER"):
         return os.environ["CARD_PRINTER"]
-    flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
-    names = [p[2] for p in win32print.EnumPrinters(flags)]
+    names = list_printers()
     for hint in NAME_HINTS:
         for n in names:
             if hint.lower() in n.lower():
@@ -58,7 +65,11 @@ def status():
         result["message"] = "No Entrust card printer found. Install the XPS Card Printer Driver."
         return result
     result["model"] = name
-    h = win32print.OpenPrinter(name)
+    try:
+        h = win32print.OpenPrinter(name)
+    except Exception:
+        result["message"] = f"Printer \"{name}\" isn't installed. Pick another in the printer menu."
+        return result
     try:
         info = win32print.GetPrinter(h, 2)
         jobs = win32print.EnumJobs(h, 0, 50, 1)

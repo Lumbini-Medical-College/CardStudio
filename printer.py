@@ -3,6 +3,6 @@
 import sys
 
 if sys.platform == "win32":
-    from printer_windows import print_card, status  # noqa: F401
+    from printer_windows import list_printers, print_card, status  # noqa: F401
 else:
-    from printer_mac import print_card, status  # noqa: F401
+    from printer_mac import list_printers, print_card, status  # noqa: F401
