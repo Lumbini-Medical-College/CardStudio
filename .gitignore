@@ -1,0 +1,11 @@
+# Personal data and secrets: never commit
+data/
+work/
+# Downloaded by run.py --setup
+models/
+fonts/
+# Build output
+build/
+dist/
+__pycache__/
+.DS_Store
